@@ -1,0 +1,38 @@
+# Prowler Worker Container
+# Runs ARQ workers that execute Prowler scans off the backend process.
+# This image is intentionally separate from the API container so
+# Prowler is never installed in the API container.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System dependencies (curl for healthchecks, gcc/python3-dev for native packages)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy dependency files first for layer caching
+COPY backend/requirements.txt ./
+
+# Create virtual environment outside /app to avoid volume mount conflicts
+ENV VIRTUAL_ENV=/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+RUN uv venv $VIRTUAL_ENV
+RUN uv pip install --python $VIRTUAL_ENV -r requirements.txt
+
+# Install Prowler CLI and ARQ (async task queue)
+RUN uv pip install --python $VIRTUAL_ENV prowler arq
+
+# Copy backend source code
+COPY backend/ .
+
+# Run the ARQ worker
+CMD ["python", "-m", "arq", "worker.WorkerSettings"]
