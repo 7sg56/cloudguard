@@ -9,13 +9,14 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  Filter,
 } from "lucide-react";
 import type { Finding, PaginatedFindings } from "@/lib/types";
 import { SeverityBadge } from "@/components/ui/SeverityBadge";
 import { Toast } from "@/components/ui/Toast";
 import { getFindings } from "@/lib/api";
-import { formatTimeAgo } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function FindingsTable({
   accountId,
@@ -113,31 +114,31 @@ export function FindingsTable({
   }, [findings, searchQuery]);
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+    <Card className="overflow-hidden">
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
-      {/* Filters Header */}
-      <div className="p-5 border-b border-slate-200 bg-slate-50/50 space-y-4">
+      {/* Header & Controls */}
+      <CardHeader className="pb-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              Security Compliance Findings
-              <span className="text-xs font-semibold text-slate-600 bg-slate-200 px-2.5 py-0.5 rounded-full">
+            <CardTitle className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              Security Findings
+              <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                 {total}
               </span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Identified security misconfigurations and regulatory compliance gaps.
-            </p>
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-500 mt-0.5">
+              Audited cloud controls across compliance benchmarks.
+            </CardDescription>
           </div>
 
           {/* Status Tabs */}
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+          <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
             <button
               onClick={() => setStatusFilter("attention")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                 statusFilter === "attention"
-                  ? "bg-rose-600 text-white shadow-sm"
+                  ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -145,19 +146,19 @@ export function FindingsTable({
             </button>
             <button
               onClick={() => setStatusFilter("pass")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                 statusFilter === "pass"
-                  ? "bg-emerald-600 text-white shadow-sm"
+                  ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              Resolved / Passed
+              Passed
             </button>
             <button
               onClick={() => setStatusFilter("all")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
                 statusFilter === "all"
-                  ? "bg-slate-900 text-white shadow-sm"
+                  ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -167,25 +168,23 @@ export function FindingsTable({
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
-          {/* Search Box */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
           <div className="md:col-span-2 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+            <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search findings by title, check ID, or resource ARN..."
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 text-slate-800"
+              placeholder="Search by title, check ID, or resource ID..."
+              className="pl-8 text-xs h-9 bg-white"
             />
           </div>
 
-          {/* Severity Filter */}
           <div>
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40 capitalize"
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 capitalize"
             >
               <option value="all">All Severities</option>
               <option value="critical">Critical</option>
@@ -196,12 +195,11 @@ export function FindingsTable({
             </select>
           </div>
 
-          {/* Service Filter */}
           <div>
             <select
               value={serviceFilter}
               onChange={(e) => setServiceFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/40 capitalize"
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-md text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 capitalize"
             >
               <option value="all">All AWS Services</option>
               {services.map((s) => (
@@ -212,122 +210,122 @@ export function FindingsTable({
             </select>
           </div>
         </div>
-      </div>
+      </CardHeader>
 
-      {/* Findings Table */}
-      {loading ? (
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto mb-2" />
-          <p className="text-slate-400 text-xs">Loading findings...</p>
-        </div>
-      ) : error ? (
-        <div className="p-8 text-center text-red-600 bg-red-50 text-sm">
-          <AlertTriangle className="w-6 h-6 mx-auto mb-1 text-red-500" />
-          {error}
-        </div>
-      ) : displayedFindings.length === 0 ? (
-        <div className="p-12 text-center text-slate-400">
-          <Check className="w-10 h-10 mx-auto mb-2 text-emerald-500/60" />
-          <p className="text-sm font-semibold text-slate-700">No matching findings</p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {searchQuery || severityFilter !== "all" || serviceFilter !== "all"
-              ? "Try clearing filters to view all records."
-              : "All evaluated security checks are passing."}
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500 font-semibold text-xs uppercase tracking-wider border-b border-slate-200">
-              <tr>
-                <th className="px-5 py-3.5">Severity</th>
-                <th className="px-5 py-3.5">Title & Policy Check</th>
-                <th className="px-5 py-3.5">Service</th>
-                <th className="px-5 py-3.5">Standards</th>
-                <th className="px-5 py-3.5">Resource ID</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {displayedFindings.map((finding) => (
-                <tr
-                  key={finding.id}
-                  className="hover:bg-slate-50/70 transition-colors cursor-pointer group"
-                  onClick={() => onSelectFinding(finding)}
-                >
-                  <td className="px-5 py-3.5 whitespace-nowrap">
-                    <SeverityBadge severity={finding.severity} />
-                  </td>
-                  <td className="px-5 py-3.5 max-w-md">
-                    <div className="font-semibold text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-1">
-                      {finding.title}
-                    </div>
-                    <div className="text-xs text-slate-400 font-mono mt-0.5">
-                      {finding.check_id}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 capitalize">
-                      {finding.service}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                      {finding.compliance_type || "AWS Standard"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
-                    <code
-                      className="text-xs font-mono bg-slate-50 px-2 py-1 rounded text-slate-600 border border-slate-200 max-w-[200px] truncate inline-block"
-                      title={finding.resource_id}
-                    >
-                      {finding.resource_id}
-                    </code>
-                  </td>
-                  <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectFinding(finding);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold rounded-lg transition-colors shadow-sm"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-                      <span>Remediate</span>
-                    </button>
-                  </td>
+      <CardContent className="p-0">
+        {loading ? (
+          <div className="p-12 text-center">
+            <Loader2 className="w-6 h-6 animate-spin text-slate-500 mx-auto mb-2" />
+            <p className="text-slate-400 text-xs">Loading findings...</p>
+          </div>
+        ) : error ? (
+          <div className="p-8 text-center text-red-600 bg-red-50 text-xs">
+            <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-red-500" />
+            {error}
+          </div>
+        ) : displayedFindings.length === 0 ? (
+          <div className="p-12 text-center text-slate-400">
+            <Check className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+            <p className="text-xs font-semibold text-slate-700">No matching findings</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-medium border-y border-slate-200">
+                <tr>
+                  <th className="px-4 py-2.5">Severity</th>
+                  <th className="px-4 py-2.5">Check / Finding</th>
+                  <th className="px-4 py-2.5">Service</th>
+                  <th className="px-4 py-2.5">Standard</th>
+                  <th className="px-4 py-2.5">Resource ID</th>
+                  <th className="px-4 py-2.5 text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {displayedFindings.map((finding) => (
+                  <tr
+                    key={finding.id}
+                    className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                    onClick={() => onSelectFinding(finding)}
+                  >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <SeverityBadge severity={finding.severity} />
+                    </td>
+                    <td className="px-4 py-3 max-w-md">
+                      <div className="font-medium text-slate-900 truncate">
+                        {finding.title}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {finding.check_id}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap capitalize text-slate-600 font-medium">
+                      {finding.service}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700">
+                        {finding.compliance_type || "AWS Standard"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <code
+                        className="text-[11px] font-mono bg-slate-50 px-1.5 py-0.5 rounded text-slate-700 border border-slate-200 max-w-[180px] truncate inline-block"
+                        title={finding.resource_id}
+                      >
+                        {finding.resource_id}
+                      </code>
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectFinding(finding);
+                        }}
+                      >
+                        <Sparkles className="w-3 h-3 text-brand-600" />
+                        Remediate
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {/* Pagination Footer */}
-      <div className="px-5 py-3.5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50">
-        <div>
-          Showing {displayedFindings.length} of {total} findings
+        {/* Pagination Footer */}
+        <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50">
+          <div>
+            Showing {displayedFindings.length} of {total} findings
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </Button>
+            <span className="px-2 text-slate-700 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-40 transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="font-semibold text-slate-700">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-40 transition-colors"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

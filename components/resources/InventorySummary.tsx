@@ -1,5 +1,6 @@
 import type { ServiceSummary } from "@/lib/types";
-import { Server, Globe, Lock, Layers, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Server, Globe, Lock, Layers } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function InventorySummary({ summary }: { summary: ServiceSummary[] }) {
   const totalResources = summary.reduce((acc, s) => acc + s.count, 0);
@@ -9,63 +10,52 @@ export function InventorySummary({ summary }: { summary: ServiceSummary[] }) {
 
   const cards = [
     {
-      label: "Total Cloud Assets",
+      label: "Total Assets",
       value: totalResources,
       icon: Server,
-      color: "text-blue-600 bg-blue-50 border-blue-200/60",
-      description: "Across monitored AWS regions",
+      sub: "Monitored AWS resources",
     },
     {
       label: "Public Exposure",
       value: totalPublic,
       icon: Globe,
-      color:
-        totalPublic > 0
-          ? "text-rose-600 bg-rose-50 border-rose-200/60"
-          : "text-emerald-600 bg-emerald-50 border-emerald-200/60",
-      description: totalPublic > 0 ? "Internet accessible assets" : "Zero internet exposed assets",
+      sub: totalPublic > 0 ? "Internet accessible" : "No public exposure",
+      highlight: totalPublic > 0 ? "text-rose-600" : "text-emerald-600",
     },
     {
-      label: "Unencrypted Storage",
+      label: "Unencrypted",
       value: totalUnencrypted,
       icon: Lock,
-      color:
-        totalUnencrypted > 0
-          ? "text-amber-600 bg-amber-50 border-amber-200/60"
-          : "text-emerald-600 bg-emerald-50 border-emerald-200/60",
-      description: totalUnencrypted > 0 ? "Missing KMS / SSE encryption" : "All data stores encrypted",
+      sub: totalUnencrypted > 0 ? "Missing encryption" : "All encrypted",
+      highlight: totalUnencrypted > 0 ? "text-amber-600" : "text-emerald-600",
     },
     {
-      label: "Active Services",
+      label: "Services",
       value: totalServices,
       icon: Layers,
-      color: "text-indigo-600 bg-indigo-50 border-indigo-200/60",
-      description: "S3, EC2, VPC, IAM, RDS, etc.",
+      sub: "Active AWS services",
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <div
-            key={card.label}
-            className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col justify-between hover:border-slate-300 transition-colors"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          <Card key={card.label}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 {card.label}
-              </span>
-              <div className={`p-2 rounded-lg border ${card.color}`}>
-                <Icon className="w-4 h-4" />
+              </CardTitle>
+              <Icon className="w-4 h-4 text-slate-400" />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold text-slate-900 ${card.highlight || ""}`}>
+                {card.value}
               </div>
-            </div>
-            <div>
-              <div className="text-2xl font-extrabold text-slate-900">{card.value}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{card.description}</div>
-            </div>
-          </div>
+              <p className="text-[11px] text-slate-500 mt-1">{card.sub}</p>
+            </CardContent>
+          </Card>
         );
       })}
     </div>
