@@ -20,6 +20,8 @@ class ProwlerRunner:
         external_id: str | None,
         regions: list[str],
         output_dir: str | None = None,
+        checks: list[str] | None = None,
+        services: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Run a Prowler scan and return parsed findings."""
         output_dir = output_dir or settings.PROWLER_OUTPUT_DIR
@@ -29,7 +31,7 @@ class ProwlerRunner:
         if not os.path.exists(prowler_bin) and not shutil.which(prowler_bin):
             raise FileNotFoundError(f"Prowler binary not found at {prowler_bin}")
 
-        regions_str = " ".join(regions)
+        regions_str = " ".join(regions) if regions else "ap-south-1"
 
         # Helper to execute command
         async def _exec_prowler(use_role: bool):
@@ -41,6 +43,12 @@ class ProwlerRunner:
                 f"-o {output_dir}",
                 "--no-banner",
             ]
+
+            if checks:
+                cmd_parts.append(f"--check {' '.join(checks)}")
+            elif services:
+                cmd_parts.append(f"--service {' '.join(services)}")
+
             if use_role and role_arn:
                 cmd_parts.append(f"-R {role_arn}")
                 if external_id and len(external_id) >= 2:
@@ -73,7 +81,7 @@ class ProwlerRunner:
 
         # Parse JSON-OCSF output files
         findings = ProwlerRunner._parse_output(output_dir)
-        logger.info("Prowler scan completed: %d findings", len(findings))
+        logger.info("Prowler scan completed: %d findings parsed", len(findings))
         return findings
 
     @staticmethod
@@ -84,15 +92,37 @@ class ProwlerRunner:
         for json_file in Path(output_dir).glob("*.ocsf.json"):
             try:
                 with open(json_file) as f:
-                    for line in f:
+                    content = f.read().strip()
+                    if not content:
+                        continue
+
+                    # Try parsing as JSON array first (Prowler 5.x default)
+                    try:
+                        events = json.loads(content)
+                        if isinstance(events, list):
+                            for event in events:
+                                item = ProwlerRunner._normalize_finding(event)
+                                if item:
+                                    findings.append(item)
+                            continue
+                        elif isinstance(events, dict):
+                            item = ProwlerRunner._normalize_finding(events)
+                            if item:
+                                findings.append(item)
+                            continue
+                    except json.JSONDecodeError:
+                        pass
+
+                    # Fallback to JSON lines
+                    for line in content.splitlines():
                         line = line.strip()
                         if not line:
                             continue
                         try:
                             event = json.loads(line)
-                            finding = ProwlerRunner._normalize_finding(event)
-                            if finding:
-                                findings.append(finding)
+                            item = ProwlerRunner._normalize_finding(event)
+                            if item:
+                                findings.append(item)
                         except json.JSONDecodeError:
                             continue
             except Exception as e:
@@ -105,11 +135,12 @@ class ProwlerRunner:
         """Normalize a Prowler OCSF event into our Finding format."""
         try:
             severity_map = {
-                "Critical": "critical",
-                "High": "high",
-                "Medium": "medium",
-                "Low": "low",
-                "Informational": "info",
+                "critical": "critical",
+                "high": "high",
+                "medium": "medium",
+                "low": "low",
+                "informational": "info",
+                "info": "info",
             }
 
             status_map = {
@@ -120,30 +151,53 @@ class ProwlerRunner:
             }
 
             finding_info = event.get("finding_info", {})
+            metadata = event.get("metadata", {})
             resources = event.get("resources", [{}])
             resource = resources[0] if resources else {}
+            group = resource.get("group", {})
+            remediation = event.get("remediation", {})
+            unmapped = event.get("unmapped", {})
 
-            severity_label = event.get("severity", "Informational")
-            if isinstance(severity_label, dict):
-                severity_label = severity_label.get("text", "Informational")
+            # Severity
+            raw_severity = event.get("severity", "informational")
+            if isinstance(raw_severity, dict):
+                raw_severity = raw_severity.get("text", "informational")
+            severity = severity_map.get(str(raw_severity).lower(), "info")
 
-            prowler_status = event.get("status", "FAIL")
-            if isinstance(prowler_status, dict):
-                prowler_status = prowler_status.get("text", "FAIL")
+            # Status
+            raw_status = event.get("status_code") or event.get("status", "FAIL")
+            if isinstance(raw_status, dict):
+                raw_status = raw_status.get("text", "FAIL")
+            status = status_map.get(str(raw_status).upper(), "fail")
+
+            # Service name
+            service_name = group.get("name") or resource.get("cloud_partition") or event.get("class_name", "aws")
+
+            # Check ID
+            check_id = metadata.get("event_code") or finding_info.get("uid") or metadata.get("uid", "")
+
+            # Compliance frameworks summary
+            compliance_dict = unmapped.get("compliance", {})
+            compliance_summary = ", ".join(list(compliance_dict.keys())[:3]) if compliance_dict else None
 
             return {
-                "check_id": finding_info.get("uid", event.get("metadata", {}).get("uid", "")),
-                "title": finding_info.get("title", ""),
-                "description": finding_info.get("desc", ""),
-                "recommendation": event.get("remediation", {}).get("desc", ""),
-                "severity": severity_map.get(severity_label, "info"),
-                "status": status_map.get(prowler_status, "fail"),
-                "resource_id": resource.get("uid", ""),
-                "resource_type": resource.get("type", ""),
-                "service": resource.get("cloud_partition", event.get("class_name", "")),
-                "region": resource.get("region", ""),
-                "compliance_type": None,
-                "raw_data": {"prowler_status": prowler_status},
+                "check_id": check_id,
+                "title": finding_info.get("title") or event.get("message", ""),
+                "description": finding_info.get("desc") or event.get("status_detail", ""),
+                "recommendation": remediation.get("desc", ""),
+                "severity": severity,
+                "status": status,
+                "resource_id": resource.get("uid") or resource.get("name", ""),
+                "resource_type": resource.get("type", "AWS Resource"),
+                "service": service_name,
+                "region": resource.get("region") or event.get("cloud", {}).get("region", "global"),
+                "compliance_type": compliance_summary,
+                "raw_data": {
+                    "prowler_status": raw_status,
+                    "risk_details": event.get("risk_details", ""),
+                    "compliance": compliance_dict,
+                    "references": remediation.get("references", []),
+                },
             }
         except Exception as e:
             logger.warning("Failed to normalize finding: %s", e)
