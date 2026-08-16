@@ -7,8 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.finding import Finding
+from models.account import CloudAccount
 
 router = APIRouter(prefix="/findings", tags=["findings"])
+
+
+async def _resolve_account_id(account_id: str, db: AsyncSession) -> str:
+    """Resolve an account ID string (which may be a UUID or a 12-digit AWS account ID) to the 12-digit AWS account ID."""
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount.account_id).where(CloudAccount.id == val))
+        aws_id = result.scalar_one_or_none()
+        if aws_id:
+            return aws_id
+    except ValueError:
+        pass
+    return account_id
 
 
 @router.get("/")
@@ -23,7 +37,8 @@ async def list_findings(
     db: AsyncSession = Depends(get_db),
 ):
     """List findings with pagination and filters."""
-    query = select(Finding).where(Finding.account_id == account_id)
+    resolved_id = await _resolve_account_id(account_id, db)
+    query = select(Finding).where(Finding.account_id == resolved_id)
 
     if severity and severity != "all":
         query = query.where(Finding.severity == severity)

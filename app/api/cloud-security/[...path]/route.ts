@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 /**
  * Catch-all API proxy route.
@@ -12,7 +12,7 @@ async function handler(
 ) {
   const { path } = await params;
   const targetPath = path.join("/");
-  const url = new URL(`/api/cloud-security/${targetPath}`, API_BASE);
+  const url = new URL(`/api/cloud-security/${targetPath}/`, API_BASE);
 
   // Forward query params
   request.nextUrl.searchParams.forEach((value, key) => {
@@ -29,6 +29,7 @@ async function handler(
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
+    redirect: "follow",
   };
 
   // Forward body for non-GET methods
@@ -44,7 +45,8 @@ async function handler(
       status: res.status,
       headers: { "Content-Type": res.headers.get("content-type") || "application/json" },
     });
-  } catch {
+  } catch (err) {
+    console.error("[API Proxy] Failed to reach backend:", url.toString(), err);
     return NextResponse.json(
       { error: "Backend service unavailable" },
       { status: 502 },

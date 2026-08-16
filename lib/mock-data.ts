@@ -4,7 +4,7 @@
 
 import type { Finding, CloudResource, ServiceSummary, CloudAccount, DashboardData } from "./types";
 
-export const USE_MOCK_DATA = true;
+export const USE_MOCK_DATA = false;
 
 // ── Mock Accounts ──────────────────────────────────────────────────────────
 

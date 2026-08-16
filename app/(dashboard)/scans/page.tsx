@@ -1,15 +1,36 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAccountContext } from "@/context/AccountContext";
 import { ScanControls } from "@/components/scans/ScanControls";
-import { triggerScan } from "@/lib/api";
+import { triggerScan, getScanStatus } from "@/lib/api";
 import { Shield } from "lucide-react";
 
 export default function ScansPage() {
-  const { selectedAccount, scanStatus, updateScanStatus, loading } = useAccountContext();
+  const { selectedAccount, scanStatus, updateScanStatus, refreshAccounts, loading } = useAccountContext();
   const [isLoading, setIsLoading] = useState(false);
   const [includeProwler, setIncludeProwler] = useState(true);
+
+  const currentScan = selectedAccount ? scanStatus[selectedAccount.id] : null;
+
+  // Poll scan status while running
+  useEffect(() => {
+    if (!currentScan || currentScan.status !== "running" || !selectedAccount) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await getScanStatus(currentScan.id);
+        updateScanStatus(selectedAccount.id, updated);
+        if (updated.status === "completed" || updated.status === "failed") {
+          refreshAccounts();
+        }
+      } catch (err) {
+        console.error("Failed to poll scan status:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [currentScan, selectedAccount, updateScanStatus, refreshAccounts]);
 
   const handleRunScan = useCallback(async () => {
     if (!selectedAccount) return;
@@ -41,7 +62,7 @@ export default function ScansPage() {
   return (
     <ScanControls
       account={selectedAccount}
-      scanStatus={scanStatus[selectedAccount.id] || null}
+      scanStatus={currentScan || null}
       isLoading={isLoading}
       includeProwler={includeProwler}
       onToggleProwler={() => setIncludeProwler(!includeProwler)}

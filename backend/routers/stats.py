@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,17 +7,33 @@ from database import get_db
 from models.finding import Finding
 from models.resource import CloudResource
 from models.scan import Scan
+from models.account import CloudAccount
 
 router = APIRouter(prefix="/stats", tags=["stats"])
+
+
+async def _resolve_account_id(account_id: str, db: AsyncSession) -> str:
+    """Resolve an account ID string (which may be a UUID or a 12-digit AWS account ID) to the 12-digit AWS account ID."""
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount.account_id).where(CloudAccount.id == val))
+        aws_id = result.scalar_one_or_none()
+        if aws_id:
+            return aws_id
+    except ValueError:
+        pass
+    return account_id
 
 
 @router.get("/{account_id}")
 async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     """Get dashboard metrics for an account."""
+    resolved_id = await _resolve_account_id(account_id, db)
+
     # Alerts by severity
     severity_result = await db.execute(
         select(Finding.severity, func.count(Finding.id))
-        .where(Finding.account_id == account_id, Finding.status == "fail")
+        .where(Finding.account_id == resolved_id, Finding.status == "fail")
         .group_by(Finding.severity)
     )
     severity_counts = {row[0]: row[1] for row in severity_result.all()}
@@ -32,7 +49,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
 
     # Security score
     total_findings_result = await db.execute(
-        select(func.count(Finding.id)).where(Finding.account_id == account_id)
+        select(func.count(Finding.id)).where(Finding.account_id == resolved_id)
     )
     total_findings = total_findings_result.scalar() or 0
     pass_count = total_findings - total_alerts
@@ -41,7 +58,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     # Resource inventory
     resource_result = await db.execute(
         select(CloudResource.service, func.count(CloudResource.id))
-        .where(CloudResource.account_id == account_id)
+        .where(CloudResource.account_id == resolved_id)
         .group_by(CloudResource.service)
     )
     asset_inventory = [
@@ -53,7 +70,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     # Last scan
     last_scan_result = await db.execute(
         select(Scan.finished_at)
-        .where(Scan.account_id == account_id, Scan.status == "completed")
+        .where(Scan.account_id == resolved_id, Scan.status == "completed")
         .order_by(Scan.finished_at.desc())
         .limit(1)
     )
@@ -64,7 +81,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     recent_result = await db.execute(
         select(Finding)
         .where(
-            Finding.account_id == account_id,
+            Finding.account_id == resolved_id,
             Finding.status == "fail",
             Finding.severity.in_(["critical", "high"]),
         )
