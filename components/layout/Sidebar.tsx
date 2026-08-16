@@ -28,13 +28,13 @@ export function Sidebar() {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-base font-bold tracking-tight text-white font-mono">
-                  SENTRIX
+                  CLOUDGUARD
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-brand-500/20 text-brand-400 border border-brand-500/30">
                   CSPM
                 </span>
               </div>
-              <span className="text-[11px] text-slate-400 block truncate">Cloud Guard</span>
+              <span className="text-[11px] text-slate-400 block truncate">Security Platform</span>
             </div>
           )}
         </Link>
