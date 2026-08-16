@@ -11,15 +11,21 @@ import {
 import {
   AlertTriangle,
   Info,
-  MoreHorizontal,
+  ChevronRight,
   Cloud,
   Database,
   Server,
   Globe,
+  Sparkles,
+  ShieldCheck,
+  ShieldAlert,
+  Layers,
+  ArrowUpRight,
 } from "lucide-react";
 import type { DashboardData, Finding } from "@/lib/types";
 import { formatTimeAgo } from "@/lib/utils";
 import { getDashboardStats } from "@/lib/api";
+import { SeverityBadge } from "@/components/ui/SeverityBadge";
 
 const COLORS = {
   critical: "#ef4444",
@@ -27,7 +33,7 @@ const COLORS = {
   medium: "#eab308",
   low: "#3b82f6",
   info: "#94a3b8",
-  pass: "#22c55e",
+  pass: "#10b981",
   fail: "#ef4444",
 };
 
@@ -36,12 +42,12 @@ const INVENTORY_COLORS = [
   "#0ea5e9",
   "#6366f1",
   "#8b5cf6",
-  "#d946ef",
   "#ec4899",
+  "#14b8a6",
 ];
 
 function getServiceIcon(service: string) {
-  const s = service.toLowerCase();
+  const s = (service || "").toLowerCase();
   if (s.includes("ec2") || s.includes("compute") || s.includes("lambda"))
     return <Server className="w-4 h-4" />;
   if (s.includes("s3") || s.includes("storage"))
@@ -83,9 +89,9 @@ export function DashboardStats({
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-64 bg-slate-100 rounded-xl"></div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="h-44 bg-slate-100 rounded-xl" />
         ))}
       </div>
     );
@@ -107,260 +113,352 @@ export function DashboardStats({
     { name: "Low", value: data.alerts_by_severity.low, color: COLORS.low },
   ].filter((d) => d.value > 0);
 
-  const complianceData = Object.entries(data.compliance_status)
-    .map(([key, val]) => ({
-      name: key.replace(/_/g, " ").toUpperCase(),
-      violations: val.fail,
-      total: val.total,
-      percentage: val.total > 0 ? Math.round(((val.total - val.fail) / val.total) * 100) : 0,
-    }))
-    .sort((a, b) => b.violations - a.violations)
-    .slice(0, 5);
+  const complianceEntries = Object.entries(data.compliance_status || {}).map(
+    ([name, val]) => ({
+      name,
+      percentage: typeof val === "number" ? val : 0,
+    }),
+  );
 
   return (
     <div className="space-y-8">
-      {/* Top Row: Score, Alerts, Compliance */}
+      {/* Top Row: Score, Alerts, Inventory Quick Stats */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Security Score */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-6">
-          <div className="relative w-24 h-24 flex items-center justify-center">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-6 relative overflow-hidden">
+          <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
             <svg className="w-full h-full transform -rotate-90">
-              <circle className="text-slate-100" cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8" />
               <circle
-                className={data.security_score > 80 ? "text-green-500" : data.security_score > 50 ? "text-yellow-500" : "text-red-500"}
-                cx="48" cy="48" fill="transparent" r="40" stroke="currentColor" strokeWidth="8"
-                strokeDasharray={2 * Math.PI * 40}
-                strokeDashoffset={2 * Math.PI * 40 * (1 - data.security_score / 100)}
+                className="text-slate-100"
+                cx="48"
+                cy="48"
+                fill="transparent"
+                r="38"
+                stroke="currentColor"
+                strokeWidth="7"
+              />
+              <circle
+                className={
+                  data.security_score > 75
+                    ? "text-emerald-500"
+                    : data.security_score > 40
+                      ? "text-amber-500"
+                      : "text-rose-500"
+                }
+                cx="48"
+                cy="48"
+                fill="transparent"
+                r="38"
+                stroke="currentColor"
+                strokeWidth="7"
+                strokeDasharray={2 * Math.PI * 38}
+                strokeDashoffset={2 * Math.PI * 38 * (1 - data.security_score / 100)}
                 strokeLinecap="round"
               />
             </svg>
-            <span className="absolute text-2xl font-bold text-slate-800">{data.security_score}%</span>
+            <div className="absolute flex flex-col items-center">
+              <span className="text-2xl font-bold text-slate-900 leading-none">
+                {data.security_score}%
+              </span>
+            </div>
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Security Score</h3>
-            <p className="text-2xl font-bold mt-1 text-slate-800">
-              {data.security_score > 80 ? "Healthy" : data.security_score > 50 ? "Fair" : "Needs Attention"}
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Security Posture
+            </span>
+            <p className="text-xl font-bold mt-0.5 text-slate-900">
+              {data.security_score > 75
+                ? "Protected"
+                : data.security_score > 40
+                  ? "Needs Attention"
+                  : "Critical Risk"}
             </p>
-            {data.last_scan && (
-              <span className="text-[10px] text-slate-400 font-medium">
-                Last scanned: {formatTimeAgo(data.last_scan)}
+            {data.last_scan ? (
+              <span className="text-xs text-slate-500 mt-1 inline-block">
+                Last audit: {formatTimeAgo(data.last_scan)}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 mt-1 inline-block">
+                No scans executed yet
               </span>
             )}
           </div>
         </div>
 
         {/* Active Alerts */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Total Active Alerts</h3>
-          <div className="flex items-end justify-between mb-4">
-            <span className="text-3xl font-bold text-slate-800">{data.total_alerts}</span>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Failing Checks
+            </span>
+            <ShieldAlert className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="flex h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-            {alertData.map((item) => (
-              <div
-                key={item.name}
-                style={{ width: `${(item.value / data.total_alerts) * 100}%`, backgroundColor: item.color }}
-                className="h-full"
-                title={`${item.name}: ${item.value}`}
-              />
-            ))}
+          <div className="my-2">
+            <span className="text-3xl font-bold text-slate-900">{data.total_alerts}</span>
+            <span className="text-xs text-slate-500 ml-2">requiring remediation</span>
           </div>
-          <div className="grid grid-cols-3 gap-2 mt-4 text-[11px] font-semibold text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.critical }}></span>{" "}
-              {data.alerts_by_severity.critical} Critical
+          <div className="space-y-2">
+            <div className="flex h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+              {data.total_alerts > 0 ? (
+                alertData.map((item) => (
+                  <div
+                    key={item.name}
+                    style={{
+                      width: `${(item.value / data.total_alerts) * 100}%`,
+                      backgroundColor: item.color,
+                    }}
+                    className="h-full"
+                    title={`${item.name}: ${item.value}`}
+                  />
+                ))
+              ) : (
+                <div className="h-full w-full bg-emerald-500" />
+              )}
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.high }}></span>{" "}
-              {data.alerts_by_severity.high} High
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.medium }}></span>{" "}
-              {data.alerts_by_severity.medium} Mid
+            <div className="grid grid-cols-4 gap-1 text-[11px] font-semibold text-slate-600">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                <span>{data.alerts_by_severity.critical} Crit</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                <span>{data.alerts_by_severity.high} High</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-yellow-500 shrink-0" />
+                <span>{data.alerts_by_severity.medium} Med</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                <span>{data.alerts_by_severity.low} Low</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Compliance Status */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Compliance Status</h3>
-          <div className="space-y-3">
-            {complianceData.length > 0 ? (
-              complianceData.map((fw) => (
-                <div key={fw.name} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium text-slate-700">
-                    <span>{fw.name}</span>
-                    <span>{fw.percentage}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${fw.percentage}%`,
-                        backgroundColor: fw.percentage > 80 ? COLORS.pass : fw.percentage > 50 ? COLORS.medium : COLORS.fail,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-4 text-slate-400 text-xs">No compliance data</div>
-            )}
+        {/* Assets Discovered */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Discovered Inventory
+            </span>
+            <Layers className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="my-2">
+            <span className="text-3xl font-bold text-slate-900">{data.total_resources}</span>
+            <span className="text-xs text-slate-500 ml-2">cloud resources</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {data.asset_inventory.slice(0, 4).map((item, idx) => (
+              <span
+                key={item.name}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 capitalize"
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: INVENTORY_COLORS[idx % INVENTORY_COLORS.length] }}
+                />
+                {item.name}: {item.value}
+              </span>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Second Row: Asset Inventory */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Resource Distribution Chart */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center min-h-[320px]">
-          <h3 className="w-full text-left font-bold text-slate-800 mb-6 flex justify-between items-center">
-            <span>Resource Distribution</span>
-            <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-              {data.total_resources} Total
-            </span>
-          </h3>
-          <div className="relative w-48 h-48">
+      {/* Second Row: Compliance Frameworks Scorecard & Resource Donut */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Compliance Frameworks (2 columns wide) */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h3 className="font-bold text-slate-900">Regulatory Compliance Standards</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Evaluated against CIS, SOC2, NIST, PCI-DSS, HIPAA, and ISO 27001 benchmarks.
+              </p>
+            </div>
+            <ShieldCheck className="w-5 h-5 text-brand-600" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {complianceEntries.map((fw) => (
+              <div
+                key={fw.name}
+                className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-lg space-y-2 hover:border-slate-300 transition-colors"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-800">{fw.name}</span>
+                  <span
+                    className={`font-bold ${
+                      fw.percentage >= 70
+                        ? "text-emerald-600"
+                        : fw.percentage >= 40
+                          ? "text-amber-600"
+                          : "text-rose-600"
+                    }`}
+                  >
+                    {fw.percentage}% Compliant
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      fw.percentage >= 70
+                        ? "bg-emerald-500"
+                        : fw.percentage >= 40
+                          ? "bg-amber-500"
+                          : "bg-rose-500"
+                    }`}
+                    style={{ width: `${fw.percentage}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Resource Distribution Chart (1 column wide) */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <h3 className="font-bold text-slate-900 mb-2">Resource Breakdown</h3>
+          <div className="relative w-full h-44 flex items-center justify-center">
             {data.total_resources > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={data.asset_inventory} cx="50%" cy="50%" innerRadius={65} outerRadius={90} paddingAngle={2} dataKey="value" stroke="none">
+                  <Pie
+                    data={data.asset_inventory}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
                     {data.asset_inventory.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={INVENTORY_COLORS[index % INVENTORY_COLORS.length]} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={INVENTORY_COLORS[index % INVENTORY_COLORS.length]}
+                      />
                     ))}
                   </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: "8px", padding: "8px", fontSize: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      borderRadius: "8px",
+                      padding: "6px 10px",
+                      fontSize: "12px",
+                      backgroundColor: "#0f172a",
+                      color: "#fff",
+                      border: "none",
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                <Cloud className="w-12 h-12 mb-2" />
-                <span className="text-xs">No resources</span>
-              </div>
+              <div className="text-center text-slate-400 text-xs">No resources</div>
             )}
             {data.total_resources > 0 && (
               <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                <span className="text-3xl font-bold text-slate-800">{data.total_resources}</span>
-                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Assets</span>
+                <span className="text-xl font-bold text-slate-900">{data.total_resources}</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-wide">Assets</span>
               </div>
             )}
           </div>
-          <div className="mt-8 grid grid-cols-2 gap-x-8 gap-y-3 w-full px-4">
-            {data.asset_inventory.slice(0, 6).map((item, idx) => (
+
+          <div className="mt-2 space-y-1.5">
+            {data.asset_inventory.slice(0, 4).map((item, idx) => (
               <div key={item.name} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: INVENTORY_COLORS[idx % INVENTORY_COLORS.length] }} />
-                  <span className="text-slate-600 font-medium truncate capitalize max-w-[80px]" title={item.name}>{item.name}</span>
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: INVENTORY_COLORS[idx % INVENTORY_COLORS.length] }}
+                  />
+                  <span className="text-slate-600 capitalize font-medium">{item.name}</span>
                 </div>
-                <span className="text-slate-400 font-medium">{item.value}</span>
+                <span className="font-semibold text-slate-800">{item.value}</span>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Service Overview */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[320px]">
-          <h3 className="font-bold text-slate-800 mb-6">Service Overview</h3>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4 max-h-[240px]">
-            {data.asset_inventory.length > 0 ? (
-              data.asset_inventory.map((item) => (
-                <div key={item.name} className="group border-b border-slate-50 pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 bg-slate-50 rounded-lg text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                        {getServiceIcon(item.name)}
-                      </div>
-                      <span className="font-medium text-slate-700 capitalize">{item.name}</span>
-                    </div>
-                    <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-full text-xs">{item.value}</span>
-                  </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex mb-3">
-                    {item.types.map((t, tIdx) => {
-                      const typePct = (t.count / item.value) * 100;
-                      return (
-                        <div key={t.name} className="h-full first:rounded-l-full last:rounded-r-full hover:opacity-80 transition-opacity"
-                          style={{ width: `${typePct}%`, backgroundColor: INVENTORY_COLORS[tIdx % INVENTORY_COLORS.length] }}
-                          title={`${t.name}: ${t.count}`}
-                        />
-                      );
-                    })}
-                  </div>
-                  {item.types && item.types.length > 0 && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 pl-1">
-                      {item.types.slice(0, 6).map((t, tIdx) => (
-                        <div key={t.name} className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: INVENTORY_COLORS[tIdx % INVENTORY_COLORS.length] }} />
-                          <span className="font-medium text-slate-700">{t.count}</span>
-                          <span className="truncate max-w-[100px] text-slate-400" title={t.name}>{t.name.replace(/_/g, " ")}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm">
-                <Info className="w-8 h-8 mb-2 opacity-50" />
-                No services detected
-              </div>
-            )}
-          </div>
-        </div>
       </section>
 
-      {/* Recent High-Risk Findings */}
+      {/* Third Row: Recent Security Findings */}
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-          <h3 className="font-bold text-slate-800">Recent High-Risk Findings</h3>
+          <div>
+            <h3 className="font-bold text-slate-900">High-Priority Security Findings</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Failing controls requiring remediation to improve posture score.
+            </p>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+            <thead className="bg-slate-50 text-slate-500 font-semibold text-xs uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4">Severity</th>
-                <th className="px-6 py-4">Resource ID</th>
-                <th className="px-6 py-4">Policy / Title</th>
-                <th className="px-6 py-4">Service</th>
-                <th className="px-6 py-4">Time</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-3.5">Severity</th>
+                <th className="px-6 py-3.5">Policy / Check</th>
+                <th className="px-6 py-3.5">Service</th>
+                <th className="px-6 py-3.5">Compliance</th>
+                <th className="px-6 py-3.5">Resource ID</th>
+                <th className="px-6 py-3.5 text-right">Remediation</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-100">
               {data.recent_findings && data.recent_findings.length > 0 ? (
                 data.recent_findings.map((finding) => (
-                  <tr key={finding.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer group" onClick={() => onSelectFinding?.(finding)}>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 text-[10px] font-bold rounded uppercase tracking-wide ${
-                        finding.severity === "critical" ? "bg-red-50 text-red-600 border border-red-200"
-                          : finding.severity === "high" ? "bg-orange-50 text-orange-600 border border-orange-200"
-                            : "bg-slate-100 text-slate-600"
-                      }`}>
-                        {finding.severity}
-                      </span>
+                  <tr
+                    key={finding.id}
+                    className="hover:bg-slate-50/70 transition-colors cursor-pointer group"
+                    onClick={() => onSelectFinding?.(finding)}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <SeverityBadge severity={finding.severity} />
                     </td>
-                    <td className="px-6 py-4">
-                      <code className="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 max-w-[150px] truncate inline-block" title={finding.resource_id}>
-                        {finding.resource_id}
-                      </code>
+                    <td className="px-6 py-4 max-w-sm">
+                      <div className="font-medium text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-1">
+                        {finding.title}
+                      </div>
+                      <div className="text-xs text-slate-400 font-mono mt-0.5">
+                        {finding.check_id}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 font-medium text-slate-800 max-w-[250px] truncate" title={finding.title}>{finding.title}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-slate-600 capitalize">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 text-slate-600 capitalize text-xs font-medium">
                         {getServiceIcon(finding.service)}
                         <span>{finding.service}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-500 text-xs">{formatTimeAgo(finding.updated_at)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button onClick={(e) => { e.stopPropagation(); onSelectFinding?.(finding); }} className="text-slate-400 hover:text-blue-500 transition-colors">
-                        <MoreHorizontal className="w-5 h-5" />
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
+                        {finding.compliance_type || "AWS Security"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <code
+                        className="text-xs font-mono bg-slate-50 px-2 py-1 rounded text-slate-600 border border-slate-200 max-w-[180px] truncate inline-block"
+                        title={finding.resource_id}
+                      >
+                        {finding.resource_id}
+                      </code>
+                    </td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectFinding?.(finding);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+                        <span>AI Fix</span>
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">No recent high-risk findings.</td>
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                    No active high-risk findings detected.
+                  </td>
                 </tr>
               )}
             </tbody>

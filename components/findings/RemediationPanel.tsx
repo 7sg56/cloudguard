@@ -7,9 +7,7 @@ import { SeverityBadge } from "@/components/ui/SeverityBadge";
 import { getRemediation, chatRemediation, getFinding } from "@/lib/api";
 import {
   AlertTriangle,
-  Ban,
-  XCircle,
-  Globe,
+  Sparkles,
   Bot,
   MessageSquare,
   Check,
@@ -17,43 +15,11 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Copy,
+  Terminal,
+  Code2,
+  FileText,
 } from "lucide-react";
-
-function FindingStatusBadge({ status }: { status: string }) {
-  if (status === "pass") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200">
-        <Check className="w-3 h-3" /> Resolved
-      </span>
-    );
-  }
-  if (status === "rescanning") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200">
-        <Loader2 className="w-3 h-3 animate-spin" /> Rescanning
-      </span>
-    );
-  }
-  if (status === "manual") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-yellow-100 text-yellow-700 border border-yellow-200">
-        <AlertTriangle className="w-3 h-3" /> Manual
-      </span>
-    );
-  }
-  if (status === "not_found") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-slate-200 text-slate-600 border border-slate-300">
-        <Ban className="w-3 h-3" /> Not Found
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide bg-red-100 text-red-700 border border-red-200">
-      <XCircle className="w-3 h-3" /> Failing
-    </span>
-  );
-}
 
 interface RemediationPanelProps {
   finding: Finding | null;
@@ -73,42 +39,54 @@ export function RemediationPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const [aiSteps, setAiSteps] = useState<{ steps: string; model: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<"ai" | "chat" | "details">("ai");
+  const [aiSteps, setAiSteps] = useState<{ steps: string; model: string; tokens_used?: number } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useState(false);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
 
-  // Reset state when finding changes
+  // Auto-fetch remediation when finding opens
   useEffect(() => {
-    setAiSteps(null);
-    setAiError(null);
-    setChatMessages([]);
-    setChatInput("");
-  }, [finding?.id]);
+    if (!finding) {
+      setAiSteps(null);
+      setAiError(null);
+      setChatMessages([]);
+      setChatInput("");
+      return;
+    }
 
-  // Poll finding status while rescanning
-  useEffect(() => {
-    if (!finding || finding.status !== "rescanning") return;
-    const interval = setInterval(async () => {
+    let isMounted = true;
+    const loadRemediation = async () => {
+      setAiLoading(true);
+      setAiError(null);
       try {
-        const updated = await getFinding(finding.id);
-        if (updated.status !== "rescanning") {
-          onFindingUpdate?.(updated);
-        }
-      } catch {
-        // Silently retry
+        const data = await getRemediation({
+          title: finding.title,
+          description: finding.description,
+          recommendation: finding.recommendation,
+          severity: finding.severity,
+          service: finding.service,
+          resource_type: finding.resource_type,
+          resource_id: finding.resource_id,
+          region: finding.region,
+        });
+        if (isMounted) setAiSteps(data);
+      } catch (err) {
+        if (isMounted) setAiError((err as Error).message || "Failed to generate remediation.");
+      } finally {
+        if (isMounted) setAiLoading(false);
       }
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [finding, onFindingUpdate]);
+    };
 
-  // Auto-scroll chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+    loadRemediation();
+    return () => {
+      isMounted = false;
+    };
+  }, [finding?.id]);
 
   // Click outside to close
   useEffect(() => {
@@ -130,28 +108,16 @@ export function RemediationPanel({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
-  const handleGetRemediation = useCallback(async () => {
-    if (!finding) return;
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const data = await getRemediation({
-        title: finding.title,
-        description: finding.description,
-        recommendation: finding.recommendation,
-        severity: finding.severity,
-        service: finding.service,
-        resource_type: finding.resource_type,
-        resource_id: finding.resource_id,
-        region: finding.region,
-      });
-      setAiSteps(data);
-    } catch (err) {
-      setAiError((err as Error).message || "Something went wrong");
-    } finally {
-      setAiLoading(false);
-    }
-  }, [finding]);
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(true);
+    setTimeout(() => setCopiedText(false), 2000);
+  };
 
   const handleSendChat = useCallback(async () => {
     if (!finding || !chatInput.trim()) return;
@@ -161,11 +127,14 @@ export function RemediationPanel({
     setChatInput("");
     setChatLoading(true);
     try {
-      const findingContext = `Title: ${finding.title}\nDescription: ${finding.description}\nService: ${finding.service}\nSeverity: ${finding.severity}`;
+      const findingContext = `Title: ${finding.title}\nDescription: ${finding.description}\nService: ${finding.service}\nSeverity: ${finding.severity}\nResource: ${finding.resource_id}`;
       const data = await chatRemediation(findingContext, newMessages);
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     } catch {
-      setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't process that. Please try again." }]);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Failed to generate reply. Please verify connection and try again." },
+      ]);
     } finally {
       setChatLoading(false);
     }
@@ -174,192 +143,210 @@ export function RemediationPanel({
   if (!finding) return null;
 
   return (
-    <>
-      <div className="fixed inset-0 bg-transparent z-40" />
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[2px] animate-fade-in">
       <div
         ref={panelRef}
-        className="fixed right-0 top-0 h-full w-[480px] bg-white shadow-2xl z-50 flex flex-col border-l border-slate-200 animate-slide-in-right"
+        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-slide-in-right overflow-hidden border-l border-slate-200"
       >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 shrink-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-900 leading-tight truncate">{finding.title}</h2>
-              <div className="flex items-center gap-2 mt-2">
+        {/* Drawer Header */}
+        <div className="p-6 border-b border-slate-200 bg-slate-900 text-white shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-2">
                 <SeverityBadge severity={finding.severity} />
-                <FindingStatusBadge status={finding.status} />
-                <span className="text-xs text-slate-500 capitalize">{finding.service}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 uppercase tracking-wider">
+                  {finding.service}
+                </span>
+                {finding.region && (
+                  <span className="text-xs text-slate-400 font-mono">
+                    {finding.region}
+                  </span>
+                )}
               </div>
+              <h2 className="text-base font-bold text-white leading-snug truncate" title={finding.title}>
+                {finding.title}
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-1 truncate" title={finding.resource_id}>
+                {finding.resource_id}
+              </p>
             </div>
-            <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors shrink-0">
+            <button
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+            >
               <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex gap-2 mt-5 pt-3 border-t border-slate-800 text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab("ai")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                activeTab === "ai"
+                  ? "bg-brand-600 text-white"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              AI Remediation
+            </button>
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                activeTab === "chat"
+                  ? "bg-brand-600 text-white"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Ask AI ({chatMessages.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("details")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                activeTab === "details"
+                  ? "bg-brand-600 text-white"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Event Details
             </button>
           </div>
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Resource info */}
-          <div className="space-y-1">
-            <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wide">Resource</h3>
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-              <div className="font-mono text-xs text-slate-600 break-all">{finding.resource_id}</div>
-              <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
-                <span>{finding.resource_type}</span>
-                <span>&bull;</span>
-                <span className="flex items-center gap-1">
-                  <Globe className="w-3 h-3" /> {finding.region === "global" ? "Global" : finding.region}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1">
-            <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wide">Description</h3>
-            <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200">
-              {finding.description || "No description provided."}
-            </p>
-          </div>
-
-          {/* Recommendation */}
-          <div className="space-y-1">
-            <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wide">Recommendation</h3>
-            <div className="text-sm text-slate-700 leading-relaxed bg-blue-50/50 p-3 rounded-lg border border-blue-100 prose prose-sm max-w-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_strong]:font-semibold [&_strong]:text-slate-900">
-              <ReactMarkdown>{finding.recommendation || "No recommendation provided."}</ReactMarkdown>
-            </div>
-          </div>
-
-          {/* Resolution Banner */}
-          {finding.status === "pass" && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2">
-              <Check className="w-5 h-5 text-emerald-600 shrink-0" />
-              <div className="text-sm text-emerald-800">
-                <span className="font-semibold">Remediation verified!</span> This finding has been resolved.
-                {finding.raw_data?.last_rescan_at && (
-                  <span className="text-emerald-600 ml-1">
-                    (rescanned {new Date(finding.raw_data.last_rescan_at).toLocaleString()})
-                  </span>
+        {/* Drawer Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {activeTab === "ai" && (
+            <div className="space-y-6">
+              {/* Finding Summary */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Risk Overview
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  {finding.description || "No description provided."}
+                </p>
+                {finding.recommendation && (
+                  <div className="pt-2 border-t border-slate-200 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Recommendation:</span>{" "}
+                    {finding.recommendation}
+                  </div>
                 )}
               </div>
-            </div>
-          )}
 
-          {finding.status === "fail" && finding.raw_data?.last_rescan_at && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
-              <div className="text-sm text-red-800">
-                <span className="font-semibold">Verification failed.</span> The issue persists.
-                <span className="text-red-600 ml-1">
-                  (rescanned {new Date(finding.raw_data.last_rescan_at).toLocaleString()})
-                </span>
-              </div>
-            </div>
-          )}
-
-          {finding.status === "not_found" && (
-            <div className="p-3 bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-2">
-              <Ban className="w-5 h-5 text-slate-500 shrink-0" />
-              <div className="text-sm text-slate-700">
-                <span className="font-semibold">Resource not found.</span> The resource may have been deleted. The security risk no longer applies.
-              </div>
-            </div>
-          )}
-
-          {/* AI Remediation Steps */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wide flex items-center gap-1">
-                <Bot className="w-4 h-4" /> AI Remediation
-              </h3>
-              {aiSteps && (
-                <span className="text-[10px] text-indigo-400 font-mono bg-indigo-100 px-2 py-0.5 rounded-full">{aiSteps.model}</span>
-              )}
-            </div>
-
-            {!aiSteps && !aiLoading && !aiError && (
-              <button onClick={handleGetRemediation} className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-violet-700 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md">
-                <Bot className="w-4 h-4" />
-                Get AI Remediation Steps
-              </button>
-            )}
-
-            {aiLoading && (
-              <div className="flex items-center gap-2 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-                <span className="text-sm text-indigo-700">Generating remediation steps...</span>
-              </div>
-            )}
-
-            {aiError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center justify-between">
-                <span><AlertTriangle className="w-4 h-4 inline mr-1" /> {aiError}</span>
-                <button onClick={handleGetRemediation} className="text-xs text-red-600 hover:text-red-800 underline ml-2">Retry</button>
-              </div>
-            )}
-
-            {aiSteps && (
-              <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-indigo-200 rounded-xl p-4">
-                <div className="text-slate-700 text-sm leading-relaxed bg-white/80 p-4 rounded-lg border border-indigo-100 prose prose-sm max-w-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1.5 [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-slate-900 [&_pre]:text-slate-100 [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-slate-100 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_p]:mb-2 [&_strong]:text-slate-900">
-                  <ReactMarkdown>{aiSteps.steps}</ReactMarkdown>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Follow-up Chat */}
-          {aiSteps && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold uppercase text-slate-500 tracking-wide flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" /> Follow-up Questions
-              </h3>
-
-              {chatMessages.length > 0 && (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {chatMessages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`text-sm rounded-lg p-3 ${
-                        msg.role === "user"
-                          ? "bg-blue-50 border border-blue-100 text-blue-900 ml-6"
-                          : "bg-slate-50 border border-slate-200 text-slate-700 mr-6 prose prose-sm max-w-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_strong]:text-slate-900 [&_p]:mb-1"
-                      }`}
-                    >
-                      {msg.role === "user" ? msg.content : <ReactMarkdown>{msg.content}</ReactMarkdown>}
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 mr-6">
-                      <div className="flex gap-1">
-                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </div>
+              {/* AI Output Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-4 h-4 text-brand-600" />
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Step-by-Step Resolution Guide
+                    </h3>
+                  </div>
+                  {aiSteps && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                        {aiSteps.model}
+                      </span>
+                      <button
+                        onClick={() => handleCopy(aiSteps.steps)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 p-1 rounded hover:bg-slate-100 transition-colors"
+                      >
+                        {copiedText ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" /> Copy
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
-                  <div ref={chatEndRef} />
                 </div>
-              )}
 
-              <div className="flex gap-2">
+                {aiLoading ? (
+                  <div className="p-10 border border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center justify-center text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-brand-600 mb-3" />
+                    <p className="text-sm font-semibold text-slate-800">
+                      Generating Tailored Remediation...
+                    </p>
+                    <p className="text-xs text-slate-500 max-w-sm mt-1">
+                      Analyzing AWS security finding with Groq LLaMA 3.3 to construct CLI commands and Terraform fixes.
+                    </p>
+                  </div>
+                ) : aiError ? (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                    <AlertTriangle className="w-4 h-4 inline mr-1" />
+                    {aiError}
+                  </div>
+                ) : aiSteps ? (
+                  <div className="prose prose-sm max-w-none text-slate-800 prose-headings:font-bold prose-headings:text-slate-900 prose-pre:bg-slate-950 prose-pre:text-slate-100 prose-pre:rounded-xl prose-pre:p-4 prose-code:text-brand-700 prose-code:bg-slate-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:text-xs">
+                    <ReactMarkdown>{aiSteps.steps}</ReactMarkdown>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "chat" && (
+            <div className="flex flex-col h-full space-y-4">
+              <div className="flex-1 space-y-3 min-h-[300px]">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <Bot className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-semibold text-slate-700">
+                      Ask Groq AI about this finding
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                      Need help customizing the CLI commands or understanding compliance requirements? Ask below.
+                    </p>
+                  </div>
+                ) : (
+                  chatMessages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex gap-3 text-xs ${
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`p-3.5 rounded-xl max-w-[85%] leading-relaxed ${
+                          msg.role === "user"
+                            ? "bg-brand-600 text-white"
+                            : "bg-slate-100 text-slate-800 border border-slate-200/60"
+                        }`}
+                      >
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {chatLoading && (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 p-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Groq AI is typing...
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Chat Input */}
+              <div className="pt-3 border-t border-slate-200 flex gap-2">
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendChat();
-                    }
-                  }}
-                  placeholder="Ask a follow-up question..."
-                  className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400"
-                  disabled={chatLoading}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
+                  placeholder="Ask a question about this fix..."
+                  className="flex-1 px-3.5 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/50 text-slate-800"
                 />
                 <button
                   onClick={handleSendChat}
                   disabled={chatLoading || !chatInput.trim()}
-                  className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3.5 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors shrink-0"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -367,41 +354,66 @@ export function RemediationPanel({
             </div>
           )}
 
-          {/* Metadata */}
-          <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-200">
-            <span>Updated: {new Date(finding.updated_at).toLocaleString()}</span>
-            <span className="font-mono">ID: {finding.check_id}</span>
-          </div>
+          {activeTab === "details" && (
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-slate-500 block">Check ID:</span>
+                    <span className="font-mono text-slate-800 font-semibold">{finding.check_id}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Status:</span>
+                    <span className="capitalize font-semibold text-slate-800">{finding.status}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Region:</span>
+                    <span className="font-mono text-slate-800">{finding.region || "Global"}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Resource Type:</span>
+                    <span className="text-slate-800">{finding.resource_type || "AWS Resource"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Raw Event JSON
+                </h4>
+                <pre className="p-4 bg-slate-950 text-slate-100 rounded-xl text-xs font-mono overflow-x-auto max-h-96">
+                  {JSON.stringify(finding.raw_data || {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer actions */}
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/80 shrink-0 flex items-center gap-3">
+        {/* Drawer Footer */}
+        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            Close Panel
+          </button>
           <button
             onClick={() => onRescan(finding)}
-            disabled={finding.status === "rescanning" || rescanLoading}
-            className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed ${
-              finding.status === "pass"
-                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                : "bg-slate-800 text-white hover:bg-slate-900"
-            }`}
+            disabled={rescanLoading || finding.status === "rescanning"}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors shadow-sm"
           >
-            {finding.status === "rescanning" || rescanLoading ? (
+            {rescanLoading || finding.status === "rescanning" ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Rescanning...
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying Fix...
               </>
             ) : (
               <>
-                <RefreshCw className="w-4 h-4" />
-                {finding.status === "pass" ? "Rescan Again" : "Verify Fix"}
+                <RefreshCw className="w-3.5 h-3.5" /> Verify Fix & Rescan
               </>
             )}
           </button>
-          <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors">
-            Close
-          </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

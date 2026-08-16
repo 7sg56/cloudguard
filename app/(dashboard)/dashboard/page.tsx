@@ -1,17 +1,35 @@
 "use client";
 
+import { useState } from "react";
 import { useAccountContext } from "@/context/AccountContext";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
+import { RemediationPanel } from "@/components/findings/RemediationPanel";
+import { rescanFinding } from "@/lib/api";
+import type { Finding } from "@/lib/types";
 import { Shield } from "lucide-react";
 
 export default function DashboardPage() {
   const { selectedAccount, loading } = useAccountContext();
+  const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
+  const [rescanLoading, setRescanLoading] = useState(false);
+
+  const handleRescan = async (finding: Finding) => {
+    setRescanLoading(true);
+    try {
+      const updated = await rescanFinding(finding.id);
+      setSelectedFinding(updated);
+    } catch (err) {
+      console.error("Rescan failed:", err);
+    } finally {
+      setRescanLoading(false);
+    }
+  };
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-64 bg-slate-100 rounded-xl" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="h-44 bg-slate-100 rounded-xl" />
         ))}
       </div>
     );
@@ -27,5 +45,19 @@ export default function DashboardPage() {
     );
   }
 
-  return <DashboardStats accountId={selectedAccount.id} />;
+  return (
+    <>
+      <DashboardStats
+        accountId={selectedAccount.id}
+        onSelectFinding={setSelectedFinding}
+      />
+      <RemediationPanel
+        finding={selectedFinding}
+        onClose={() => setSelectedFinding(null)}
+        onRescan={handleRescan}
+        onFindingUpdate={setSelectedFinding}
+        rescanLoading={rescanLoading}
+      />
+    </>
+  );
 }
