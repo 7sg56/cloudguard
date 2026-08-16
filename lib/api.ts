@@ -73,6 +73,23 @@ export async function createAccount(data: {
   return res.json();
 }
 
+export async function updateAccount(
+  id: string,
+  data: {
+    name?: string;
+    role_arn?: string;
+    environment?: string;
+    regions?: string;
+  },
+): Promise<CloudAccount> {
+  const res = await fetchWithAuth(`/accounts/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update account");
+  return res.json();
+}
+
 export async function deleteAccount(id: string): Promise<void> {
   if (USE_MOCK_DATA) return;
   const res = await fetchWithAuth(`/accounts/${id}`, { method: "DELETE" });
@@ -82,6 +99,12 @@ export async function deleteAccount(id: string): Promise<void> {
 export async function validateAccountRole(accountId: string): Promise<{ valid: boolean; error?: string }> {
   if (USE_MOCK_DATA) return { valid: true };
   const res = await fetchWithAuth(`/accounts/${accountId}/validate`);
+  return res.json();
+}
+
+export async function getScanHistory(accountId: string): Promise<ScanResult[]> {
+  const res = await fetchWithAuth(`/scan/${accountId}/history`);
+  if (!res.ok) return [];
   return res.json();
 }
 

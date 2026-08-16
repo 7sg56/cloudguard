@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,6 +20,13 @@ class AccountCreate(BaseModel):
     regions: str = "us-east-1"
 
 
+class AccountUpdate(BaseModel):
+    name: Optional[str] = None
+    role_arn: Optional[str] = None
+    environment: Optional[str] = None
+    regions: Optional[str] = None
+
+
 class AccountResponse(BaseModel):
     id: str
     account_id: str
@@ -36,7 +44,8 @@ class AccountResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/")
+@router.get("", response_model=list[AccountResponse])
+@router.get("/", response_model=list[AccountResponse])
 async def list_accounts(db: AsyncSession = Depends(get_db)) -> list[AccountResponse]:
     """List all connected AWS accounts."""
     result = await db.execute(select(CloudAccount).order_by(CloudAccount.created_at))
@@ -60,7 +69,8 @@ async def list_accounts(db: AsyncSession = Depends(get_db)) -> list[AccountRespo
     ]
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201, response_model=AccountResponse)
+@router.post("/", status_code=201, response_model=AccountResponse)
 async def create_account(data: AccountCreate, db: AsyncSession = Depends(get_db)) -> AccountResponse:
     """Register a new AWS account for scanning."""
     external_id = f"cspm-ext-{uuid.uuid4().hex[:12]}"
@@ -95,13 +105,75 @@ async def create_account(data: AccountCreate, db: AsyncSession = Depends(get_db)
     )
 
 
+@router.put("/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: str,
+    data: AccountUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    """Update an existing AWS account's configuration."""
+    # Find account by UUID or 12-digit account_id
+    account = None
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount).where(CloudAccount.id == val))
+        account = result.scalar_one_or_none()
+    except ValueError:
+        pass
+
+    if not account:
+        result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
+        account = result.scalar_one_or_none()
+
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    if data.name is not None:
+        account.name = data.name
+    if data.role_arn is not None:
+        account.role_arn = data.role_arn
+    if data.environment is not None:
+        account.environment = data.environment
+    if data.regions is not None:
+        account.regions = [r.strip() for r in data.regions.split(",") if r.strip()]
+
+    await db.commit()
+    await db.refresh(account)
+
+    return AccountResponse(
+        id=str(account.id),
+        account_id=account.account_id,
+        name=account.name,
+        provider="aws",
+        role_arn=account.role_arn,
+        external_id=account.external_id,
+        environment=account.environment,
+        regions=account.regions or [],
+        status=account.status,
+        created_at=account.created_at.isoformat(),
+        updated_at=account.updated_at.isoformat(),
+        last_scan_at=account.last_scan_at.isoformat() if account.last_scan_at else None,
+    )
+
+
 @router.delete("/{account_id}")
 async def delete_account(account_id: str, db: AsyncSession = Depends(get_db)):
     """Delete an AWS account and all related data."""
-    result = await db.execute(select(CloudAccount).where(CloudAccount.id == uuid.UUID(account_id)))
-    account = result.scalar_one_or_none()
+    account = None
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount).where(CloudAccount.id == val))
+        account = result.scalar_one_or_none()
+    except ValueError:
+        pass
+
+    if not account:
+        result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
+        account = result.scalar_one_or_none()
+
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+
     await db.delete(account)
     await db.commit()
     return {"status": "deleted"}
@@ -114,5 +186,4 @@ async def validate_account(account_id: str, db: AsyncSession = Depends(get_db)):
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    # In production, this would call AWSSessionManager.validate_role
     return {"valid": True}

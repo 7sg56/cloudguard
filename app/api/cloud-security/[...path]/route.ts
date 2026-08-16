@@ -12,7 +12,7 @@ async function handler(
 ) {
   const { path } = await params;
   const targetPath = path.join("/");
-  const url = new URL(`/api/cloud-security/${targetPath}/`, API_BASE);
+  const url = new URL(`/api/cloud-security/${targetPath}`, API_BASE);
 
   // Forward query params
   request.nextUrl.searchParams.forEach((value, key) => {
@@ -29,7 +29,6 @@ async function handler(
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
-    redirect: "follow",
   };
 
   // Forward body for non-GET methods

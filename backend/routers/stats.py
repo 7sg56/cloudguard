@@ -67,6 +67,66 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     ]
     total_resources = sum(a["value"] for a in asset_inventory)
 
+    # Compliance frameworks dynamic aggregation
+    all_findings_result = await db.execute(
+        select(Finding.status, Finding.raw_data, Finding.compliance_type)
+        .where(Finding.account_id == resolved_id)
+    )
+    all_findings = all_findings_result.all()
+
+    framework_stats = {
+        "CIS AWS Foundations": {"pass": 0, "total": 0},
+        "SOC 2 Type II": {"pass": 0, "total": 0},
+        "PCI-DSS v4.0": {"pass": 0, "total": 0},
+        "HIPAA Security": {"pass": 0, "total": 0},
+        "NIST 800-53": {"pass": 0, "total": 0},
+        "ISO 27001": {"pass": 0, "total": 0},
+    }
+
+    for f_status, f_raw, f_comp_type in all_findings:
+        raw_comp = (f_raw or {}).get("compliance", {}) if isinstance(f_raw, dict) else {}
+        comp_keys = [k.upper() for k in raw_comp.keys()]
+        comp_str = (f_comp_type or "").upper()
+
+        is_pass = f_status == "pass"
+
+        if any("CIS" in k for k in comp_keys) or "CIS" in comp_str:
+            framework_stats["CIS AWS Foundations"]["total"] += 1
+            if is_pass:
+                framework_stats["CIS AWS Foundations"]["pass"] += 1
+
+        if any("SOC2" in k or "SOC" in k for k in comp_keys) or "SOC" in comp_str:
+            framework_stats["SOC 2 Type II"]["total"] += 1
+            if is_pass:
+                framework_stats["SOC 2 Type II"]["pass"] += 1
+
+        if any("PCI" in k for k in comp_keys) or "PCI" in comp_str:
+            framework_stats["PCI-DSS v4.0"]["total"] += 1
+            if is_pass:
+                framework_stats["PCI-DSS v4.0"]["pass"] += 1
+
+        if any("HIPAA" in k for k in comp_keys) or "HIPAA" in comp_str:
+            framework_stats["HIPAA Security"]["total"] += 1
+            if is_pass:
+                framework_stats["HIPAA Security"]["pass"] += 1
+
+        if any("NIST" in k for k in comp_keys) or "NIST" in comp_str:
+            framework_stats["NIST 800-53"]["total"] += 1
+            if is_pass:
+                framework_stats["NIST 800-53"]["pass"] += 1
+
+        if any("ISO" in k or "27001" in k for k in comp_keys) or "ISO" in comp_str:
+            framework_stats["ISO 27001"]["total"] += 1
+            if is_pass:
+                framework_stats["ISO 27001"]["pass"] += 1
+
+    compliance_status = {}
+    for name, data in framework_stats.items():
+        if data["total"] > 0:
+            compliance_status[name] = round((data["pass"] / data["total"]) * 100)
+        else:
+            compliance_status[name] = security_score
+
     # Last scan
     last_scan_result = await db.execute(
         select(Scan.finished_at)
@@ -77,13 +137,12 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     last_scan_row = last_scan_result.scalar_one_or_none()
     last_scan = last_scan_row.isoformat() if last_scan_row else None
 
-    # Recent critical/high findings
+    # Recent critical/high/medium findings
     recent_result = await db.execute(
         select(Finding)
         .where(
             Finding.account_id == resolved_id,
             Finding.status == "fail",
-            Finding.severity.in_(["critical", "high"]),
         )
         .order_by(Finding.updated_at.desc())
         .limit(10)
@@ -113,7 +172,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
         "security_score": security_score,
         "total_alerts": total_alerts,
         "alerts_by_severity": alerts_by_severity,
-        "compliance_status": {},  # Populated after Prowler scan
+        "compliance_status": compliance_status,
         "asset_inventory": asset_inventory,
         "total_resources": total_resources,
         "last_scan": last_scan,

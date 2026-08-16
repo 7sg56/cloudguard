@@ -173,15 +173,27 @@ async def trigger_scan(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a security scan for an account."""
-    # Verify account exists
-    result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
-    account = result.scalar_one_or_none()
+    # Resolve account by UUID or 12-digit ID
+    account = None
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount).where(CloudAccount.id == val))
+        account = result.scalar_one_or_none()
+    except ValueError:
+        pass
+
+    if not account:
+        result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
+        account = result.scalar_one_or_none()
+
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
+    target_aws_account_id = account.account_id
+
     # Create scan record
     scan = Scan(
-        account_id=account_id,
+        account_id=target_aws_account_id,
         scan_type="full" if include_prowler else "resources_only",
         status="running",
         started_at=datetime.now(timezone.utc),
@@ -195,7 +207,7 @@ async def trigger_scan(
     background_tasks.add_task(
         _run_scan_background,
         str(scan.id),
-        account_id,
+        target_aws_account_id,
         account.role_arn,
         account.external_id or "",
         account.regions or ["us-east-1"],
@@ -234,3 +246,40 @@ async def get_scan_status(scan_id: str, db: AsyncSession = Depends(get_db)):
         "resources_scanned": scan.resources_scanned,
         "error_message": scan.error_message,
     }
+
+
+@router.get("/{account_id}/history")
+async def get_scan_history(account_id: str, limit: int = Query(20, ge=1, le=100), db: AsyncSession = Depends(get_db)):
+    """Get scan history for an account."""
+    # Resolve account by UUID or 12-digit ID
+    target_id = account_id
+    try:
+        val = uuid.UUID(account_id)
+        result = await db.execute(select(CloudAccount.account_id).where(CloudAccount.id == val))
+        found = result.scalar_one_or_none()
+        if found:
+            target_id = found
+    except ValueError:
+        pass
+
+    result = await db.execute(
+        select(Scan)
+        .where(Scan.account_id == target_id)
+        .order_by(Scan.started_at.desc())
+        .limit(limit)
+    )
+    scans = result.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "account_id": s.account_id,
+            "status": s.status,
+            "scan_type": s.scan_type,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+            "findings_count": s.findings_count,
+            "resources_scanned": s.resources_scanned,
+            "error_message": s.error_message,
+        }
+        for s in scans
+    ]

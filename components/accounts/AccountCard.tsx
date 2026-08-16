@@ -2,16 +2,23 @@
 
 import type { CloudAccount } from "@/lib/types";
 import { formatTimeAgo } from "@/lib/utils";
-import { Cloud, MapPin, Trash2 } from "lucide-react";
+import { Cloud, MapPin, Trash2, Edit3 } from "lucide-react";
 
 interface AccountCardProps {
   account: CloudAccount;
   isSelected: boolean;
   onSelect: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }
 
-export function AccountCard({ account, isSelected, onSelect, onDelete }: AccountCardProps) {
+export function AccountCard({
+  account,
+  isSelected,
+  onSelect,
+  onEdit,
+  onDelete,
+}: AccountCardProps) {
   const statusColors: Record<string, string> = {
     connected: "bg-emerald-500",
     pending: "bg-amber-500",
@@ -23,7 +30,9 @@ export function AccountCard({ account, isSelected, onSelect, onDelete }: Account
     <div
       onClick={onSelect}
       className={`relative bg-white rounded-xl border shadow-sm p-5 cursor-pointer transition-all hover:shadow-md ${
-        isSelected ? "border-brand-500 ring-2 ring-brand-200" : "border-slate-200 hover:border-slate-300"
+        isSelected
+          ? "border-brand-500 ring-2 ring-brand-200"
+          : "border-slate-200 hover:border-slate-300"
       }`}
     >
       {/* Status indicator */}
@@ -33,10 +42,10 @@ export function AccountCard({ account, isSelected, onSelect, onDelete }: Account
       </div>
 
       <div className="flex items-start gap-3">
-        <div className="p-2 bg-slate-50 rounded-lg">
+        <div className="p-2.5 bg-slate-50 rounded-lg shrink-0">
           <Cloud className="w-5 h-5 text-slate-500" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pr-16">
           <h3 className="text-sm font-semibold text-slate-900 truncate">{account.name}</h3>
           <p className="text-xs text-slate-500 font-mono mt-0.5">{account.account_id}</p>
         </div>
@@ -48,12 +57,14 @@ export function AccountCard({ account, isSelected, onSelect, onDelete }: Account
             {account.environment}
           </span>
           <span className="text-slate-300">|</span>
-          <span className="uppercase font-semibold text-slate-400">{account.provider || "AWS"}</span>
+          <span className="uppercase font-semibold text-slate-400">
+            {account.provider || "AWS"}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs text-slate-500">
-          <MapPin className="w-3 h-3" />
-          <span>{account.regions.join(", ")}</span>
+          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="truncate">{(account.regions || []).join(", ") || "None"}</span>
         </div>
 
         <div className="text-xs text-slate-400">
@@ -61,14 +72,29 @@ export function AccountCard({ account, isSelected, onSelect, onDelete }: Account
         </div>
       </div>
 
-      {/* Delete button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="absolute bottom-4 right-4 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-        title="Delete account"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      {/* Action buttons */}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+          title="Edit account"
+        >
+          <Edit3 className="w-4 h-4" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+          title="Delete account"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }

@@ -3,15 +3,38 @@
 import { useState, useCallback, useEffect } from "react";
 import { useAccountContext } from "@/context/AccountContext";
 import { ScanControls } from "@/components/scans/ScanControls";
-import { triggerScan, getScanStatus } from "@/lib/api";
+import { triggerScan, getScanStatus, getScanHistory } from "@/lib/api";
+import type { ScanResult } from "@/lib/types";
 import { Shield } from "lucide-react";
 
 export default function ScansPage() {
-  const { selectedAccount, scanStatus, updateScanStatus, refreshAccounts, loading } = useAccountContext();
+  const {
+    selectedAccount,
+    scanStatus,
+    updateScanStatus,
+    refreshAccounts,
+    loading,
+  } = useAccountContext();
+
   const [isLoading, setIsLoading] = useState(false);
   const [includeProwler, setIncludeProwler] = useState(true);
+  const [history, setHistory] = useState<ScanResult[]>([]);
 
   const currentScan = selectedAccount ? scanStatus[selectedAccount.id] : null;
+
+  const fetchHistory = useCallback(async () => {
+    if (!selectedAccount) return;
+    try {
+      const scans = await getScanHistory(selectedAccount.account_id);
+      setHistory(scans);
+    } catch (err) {
+      console.error("Failed to fetch scan history:", err);
+    }
+  }, [selectedAccount]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   // Poll scan status while running
   useEffect(() => {
@@ -23,6 +46,7 @@ export default function ScansPage() {
         updateScanStatus(selectedAccount.id, updated);
         if (updated.status === "completed" || updated.status === "failed") {
           refreshAccounts();
+          fetchHistory();
         }
       } catch (err) {
         console.error("Failed to poll scan status:", err);
@@ -30,7 +54,7 @@ export default function ScansPage() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [currentScan, selectedAccount, updateScanStatus, refreshAccounts]);
+  }, [currentScan, selectedAccount, updateScanStatus, refreshAccounts, fetchHistory]);
 
   const handleRunScan = useCallback(async () => {
     if (!selectedAccount) return;
@@ -38,12 +62,13 @@ export default function ScansPage() {
     try {
       const scan = await triggerScan(selectedAccount.account_id, includeProwler);
       updateScanStatus(selectedAccount.id, scan);
+      fetchHistory();
     } catch (err) {
       console.error("Failed to trigger scan:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedAccount, includeProwler, updateScanStatus]);
+  }, [selectedAccount, includeProwler, updateScanStatus, fetchHistory]);
 
   if (loading) {
     return <div className="animate-pulse h-64 bg-slate-100 rounded-xl" />;
@@ -63,6 +88,7 @@ export default function ScansPage() {
     <ScanControls
       account={selectedAccount}
       scanStatus={currentScan || null}
+      history={history}
       isLoading={isLoading}
       includeProwler={includeProwler}
       onToggleProwler={() => setIncludeProwler(!includeProwler)}
