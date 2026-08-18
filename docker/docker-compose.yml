@@ -6,11 +6,11 @@ services:
       dockerfile: docker/Dockerfile.frontend
     ports:
       - "3000:3000"
+    env_file:
+      - ../.env
     environment:
       - INTERNAL_API_URL=http://api:8000
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-    env_file:
-      - ../.env
     depends_on:
       - api
     networks:
@@ -23,11 +23,11 @@ services:
       dockerfile: docker/Dockerfile.api
     ports:
       - "8000:8000"
+    env_file:
+      - ../.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
       - REDIS_URL=redis://redis:6379/0
-    env_file:
-      - ../.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,11 +41,11 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
+    env_file:
+      - ../.env
     environment:
       - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
       - REDIS_URL=redis://redis:6379/0
-    env_file:
-      - ../.env
     depends_on:
       postgres:
         condition: service_healthy
