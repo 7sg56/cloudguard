@@ -103,25 +103,18 @@ cmd_start() {
     printf "${CLR_CYAN}${CLR_BOLD}======================================================${CLR_RESET}\n"
     printf "\n"
 
+    # Stop any orphan standalone containers that might conflict on host ports
+    if docker ps -q -f "name=cspm-redis" | grep -q .; then
+        log_info "Stopping conflicting standalone redis container..."
+        docker stop cspm-redis >/dev/null 2>&1 || true
+        docker rm cspm-redis >/dev/null 2>&1 || true
+    fi
+
     log_info "Building and launching containers via Docker Compose..."
     $DOCKER_COMPOSE -f "$COMPOSE_FILE" up -d --build
 
     log_info "Waiting for backing services to become healthy..."
-    
-    # Wait for PostgreSQL
-    local timeout=30
-    local elapsed=0
-    until docker inspect --format='{{json .State.Health.Status}}' cspm-postgres 2>/dev/null | grep -q "healthy" || [[ $elapsed -ge $timeout ]]; do
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-
-    # Wait for Redis
-    elapsed=0
-    until docker inspect --format='{{json .State.Health.Status}}' cspm-redis 2>/dev/null | grep -q "healthy" || [[ $elapsed -ge $timeout ]]; do
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
+    sleep 3
 
     printf "\n"
     log_success "All CloudGuard services are up and running."

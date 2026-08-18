@@ -7,7 +7,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8000
+      - INTERNAL_API_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     env_file:
       - ../.env
     depends_on:
@@ -22,6 +23,9 @@ services:
       dockerfile: docker/Dockerfile.api
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
+      - REDIS_URL=redis://redis:6379/0
     env_file:
       - ../.env
     depends_on:
@@ -37,6 +41,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
+      - REDIS_URL=redis://redis:6379/0
     env_file:
       - ../.env
     depends_on:
@@ -60,8 +67,8 @@ services:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cspm"]
-      interval: 5s
-      timeout: 5s
+      interval: 3s
+      timeout: 3s
       retries: 5
     networks:
       - cspm-network
@@ -73,8 +80,8 @@ services:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
+      interval: 3s
+      timeout: 3s
       retries: 5
     networks:
       - cspm-network
