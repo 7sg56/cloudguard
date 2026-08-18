@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "docker:start": "./docker-start.sh start",
+    "docker:stop": "./docker-start.sh stop",
+    "docker:logs": "./docker-start.sh logs",
+    "docker:status": "./docker-start.sh status",
+    "docker:clean": "./docker-start.sh clean"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
