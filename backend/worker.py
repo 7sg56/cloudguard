@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from arq.connections import RedisSettings
@@ -11,9 +10,9 @@ from sqlalchemy import select
 from config import settings
 from database import async_session
 from models.scan import Scan
-from models.finding import Finding
 from models.account import CloudAccount
 from services.prowler_runner import ProwlerRunner
+from routers.utils import upsert_findings
 
 logger = logging.getLogger(__name__)
 
@@ -48,36 +47,23 @@ async def run_prowler_scan(ctx: dict, scan_id: str, account_id: str) -> dict:
                 regions=account.regions or ["us-east-1"],
             )
 
-            # Store findings
-            for raw in raw_findings:
-                finding = Finding(
-                    account_id=account_id,
-                    scan_id=uuid.UUID(scan_id),
-                    check_id=raw.get("check_id", ""),
-                    resource_id=raw.get("resource_id"),
-                    resource_type=raw.get("resource_type"),
-                    service=raw.get("service"),
-                    region=raw.get("region"),
-                    title=raw.get("title", ""),
-                    status=raw.get("status", "fail"),
-                    severity=raw.get("severity", "info"),
-                    compliance_type=raw.get("compliance_type"),
-                    description=raw.get("description"),
-                    recommendation=raw.get("recommendation"),
-                    raw_data=raw.get("raw_data", {}),
-                )
-                db.add(finding)
+            # Deduplicate and upsert findings
+            from datetime import datetime, timezone
+
+            findings_count = await upsert_findings(db, raw_findings, account_id, scan_id)
 
             scan.status = "completed"
-            scan.findings_count = len(raw_findings)
+            scan.findings_count = findings_count
             scan.finished_at = datetime.now(timezone.utc)
             await db.commit()
 
-            logger.info("Scan %s completed: %d findings", scan_id, len(raw_findings))
-            return {"status": "completed", "findings_count": len(raw_findings)}
+            logger.info("Scan %s completed: %d findings", scan_id, findings_count)
+            return {"status": "completed", "findings_count": findings_count}
 
         except Exception as e:
             logger.error("Scan %s failed: %s", scan_id, e)
+            from datetime import datetime, timezone
+
             scan.status = "failed"
             scan.error_message = str(e)
             scan.finished_at = datetime.now(timezone.utc)

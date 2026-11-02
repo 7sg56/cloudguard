@@ -1,4 +1,3 @@
-import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,28 +6,25 @@ from database import get_db
 from models.finding import Finding
 from models.resource import CloudResource
 from models.scan import Scan
-from models.account import CloudAccount
+from routers.utils import resolve_account_id, finding_to_dict
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
-
-async def _resolve_account_id(account_id: str, db: AsyncSession) -> str:
-    """Resolve an account ID string (which may be a UUID or a 12-digit AWS account ID) to the 12-digit AWS account ID."""
-    try:
-        val = uuid.UUID(account_id)
-        result = await db.execute(select(CloudAccount.account_id).where(CloudAccount.id == val))
-        aws_id = result.scalar_one_or_none()
-        if aws_id:
-            return aws_id
-    except ValueError:
-        pass
-    return account_id
+# Mapping from framework display name to keywords to match in compliance data
+_FRAMEWORK_KEYWORDS = {
+    "CIS AWS Foundations": ["CIS"],
+    "SOC 2 Type II": ["SOC2", "SOC"],
+    "PCI-DSS v4.0": ["PCI"],
+    "HIPAA Security": ["HIPAA"],
+    "NIST 800-53": ["NIST"],
+    "ISO 27001": ["ISO", "27001"],
+}
 
 
 @router.get("/{account_id}")
 async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     """Get dashboard metrics for an account."""
-    resolved_id = await _resolve_account_id(account_id, db)
+    resolved_id = await resolve_account_id(account_id, db)
 
     # Alerts by severity
     severity_result = await db.execute(
@@ -74,58 +70,26 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
     )
     all_findings = all_findings_result.all()
 
-    framework_stats = {
-        "CIS AWS Foundations": {"pass": 0, "total": 0},
-        "SOC 2 Type II": {"pass": 0, "total": 0},
-        "PCI-DSS v4.0": {"pass": 0, "total": 0},
-        "HIPAA Security": {"pass": 0, "total": 0},
-        "NIST 800-53": {"pass": 0, "total": 0},
-        "ISO 27001": {"pass": 0, "total": 0},
-    }
+    framework_stats = {name: {"pass": 0, "total": 0} for name in _FRAMEWORK_KEYWORDS}
 
     for f_status, f_raw, f_comp_type in all_findings:
         raw_comp = (f_raw or {}).get("compliance", {}) if isinstance(f_raw, dict) else {}
         comp_keys = [k.upper() for k in raw_comp.keys()]
         comp_str = (f_comp_type or "").upper()
-
         is_pass = f_status == "pass"
 
-        if any("CIS" in k for k in comp_keys) or "CIS" in comp_str:
-            framework_stats["CIS AWS Foundations"]["total"] += 1
-            if is_pass:
-                framework_stats["CIS AWS Foundations"]["pass"] += 1
-
-        if any("SOC2" in k or "SOC" in k for k in comp_keys) or "SOC" in comp_str:
-            framework_stats["SOC 2 Type II"]["total"] += 1
-            if is_pass:
-                framework_stats["SOC 2 Type II"]["pass"] += 1
-
-        if any("PCI" in k for k in comp_keys) or "PCI" in comp_str:
-            framework_stats["PCI-DSS v4.0"]["total"] += 1
-            if is_pass:
-                framework_stats["PCI-DSS v4.0"]["pass"] += 1
-
-        if any("HIPAA" in k for k in comp_keys) or "HIPAA" in comp_str:
-            framework_stats["HIPAA Security"]["total"] += 1
-            if is_pass:
-                framework_stats["HIPAA Security"]["pass"] += 1
-
-        if any("NIST" in k for k in comp_keys) or "NIST" in comp_str:
-            framework_stats["NIST 800-53"]["total"] += 1
-            if is_pass:
-                framework_stats["NIST 800-53"]["pass"] += 1
-
-        if any("ISO" in k or "27001" in k for k in comp_keys) or "ISO" in comp_str:
-            framework_stats["ISO 27001"]["total"] += 1
-            if is_pass:
-                framework_stats["ISO 27001"]["pass"] += 1
+        for framework_name, keywords in _FRAMEWORK_KEYWORDS.items():
+            if any(kw in k for k in comp_keys for kw in keywords) or any(kw in comp_str for kw in keywords):
+                framework_stats[framework_name]["total"] += 1
+                if is_pass:
+                    framework_stats[framework_name]["pass"] += 1
 
     compliance_status = {}
     for name, data in framework_stats.items():
         if data["total"] > 0:
             compliance_status[name] = round((data["pass"] / data["total"]) * 100)
         else:
-            compliance_status[name] = security_score
+            compliance_status[name] = None
 
     # Last scan
     last_scan_result = await db.execute(
@@ -147,26 +111,7 @@ async def dashboard_stats(account_id: str, db: AsyncSession = Depends(get_db)):
         .order_by(Finding.updated_at.desc())
         .limit(10)
     )
-    recent_findings = [
-        {
-            "id": str(f.id),
-            "account_id": f.account_id,
-            "check_id": f.check_id,
-            "resource_id": f.resource_id,
-            "resource_type": f.resource_type,
-            "service": f.service,
-            "region": f.region,
-            "title": f.title,
-            "status": f.status,
-            "severity": f.severity,
-            "compliance_type": f.compliance_type,
-            "description": f.description,
-            "recommendation": f.recommendation,
-            "updated_at": f.updated_at.isoformat() if f.updated_at else None,
-            "raw_data": f.raw_data or {},
-        }
-        for f in recent_result.scalars().all()
-    ]
+    recent_findings = [finding_to_dict(f) for f in recent_result.scalars().all()]
 
     return {
         "security_score": security_score,

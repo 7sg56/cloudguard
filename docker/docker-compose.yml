@@ -1,5 +1,5 @@
 services:
-  # ── Frontend ──────────────────────────────────────────────────────────────
+  # -- Frontend ----------------------------------------------------------------
   frontend:
     build:
       context: ..
@@ -16,7 +16,7 @@ services:
     networks:
       - cspm-network
 
-  # ── FastAPI Backend ───────────────────────────────────────────────────────
+  # -- FastAPI Backend ---------------------------------------------------------
   api:
     build:
       context: ..
@@ -26,7 +26,7 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
+      - DATABASE_URL=postgresql+asyncpg://cspm:${POSTGRES_PASSWORD:-password}@postgres:5432/cspm
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
@@ -36,7 +36,7 @@ services:
     networks:
       - cspm-network
 
-  # ── Prowler Worker ────────────────────────────────────────────────────────
+  # -- Prowler Worker ----------------------------------------------------------
   worker:
     build:
       context: ..
@@ -44,7 +44,7 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://cspm:password@postgres:5432/cspm
+      - DATABASE_URL=postgresql+asyncpg://cspm:${POSTGRES_PASSWORD:-password}@postgres:5432/cspm
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       postgres:
@@ -54,17 +54,17 @@ services:
     networks:
       - cspm-network
 
-  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  # -- PostgreSQL --------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: cspm
       POSTGRES_USER: cspm
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cspm"]
       interval: 3s
@@ -73,11 +73,11 @@ services:
     networks:
       - cspm-network
 
-  # ── Redis ─────────────────────────────────────────────────────────────────
+  # -- Redis -------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s

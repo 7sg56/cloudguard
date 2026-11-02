@@ -36,7 +36,7 @@ async def get_remediation(request: RemediationRequest, db: AsyncSession = Depend
 
 
 @router.post("/chat")
-async def chat_followup(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+async def chat_followup(request: ChatRequest):
     """Send a follow-up question about a finding's remediation."""
     result = await remediation_service.chat_followup(
         finding_context=request.finding_context,

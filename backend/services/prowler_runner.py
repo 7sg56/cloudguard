@@ -24,51 +24,75 @@ class ProwlerRunner:
         services: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Run a Prowler scan and return parsed findings."""
+        if not checks and not services:
+            services = ["s3", "iam", "ec2", "vpc", "accessanalyzer", "rds"]
         output_dir = output_dir or settings.PROWLER_OUTPUT_DIR
+
+        # Clean previous output to prevent re-parsing stale findings
+        if os.path.exists(output_dir):
+            for old_file in Path(output_dir).glob("*.ocsf.json"):
+                try:
+                    old_file.unlink()
+                except OSError as e:
+                    logger.warning("Failed to remove old output file %s: %s", old_file, e)
         os.makedirs(output_dir, exist_ok=True)
 
-        prowler_bin = shutil.which("prowler") or "/opt/homebrew/bin/prowler"
-        if not os.path.exists(prowler_bin) and not shutil.which(prowler_bin):
-            raise FileNotFoundError(f"Prowler binary not found at {prowler_bin}")
+        candidates = [
+            shutil.which("prowler"),
+            "/venv/bin/prowler",
+            "/usr/local/bin/prowler",
+            "/opt/homebrew/bin/prowler",
+        ]
+        prowler_bin = next((c for c in candidates if c and os.path.exists(c)), None)
+        if not prowler_bin:
+            raise FileNotFoundError("Prowler binary not found in PATH or standard directories.")
 
-        regions_str = " ".join(regions) if regions else "ap-south-1"
+        regions_str = " ".join(regions) if regions else settings.AWS_DEFAULT_REGION
 
-        # Helper to execute command
-        async def _exec_prowler(use_role: bool):
-            cmd_parts = [
+        # Check if role_arn is a real IAM role (not an IAM user ARN or empty)
+        is_role_arn = bool(role_arn and ":role/" in role_arn)
+
+        def _build_args(use_role: bool) -> list[str]:
+            """Build Prowler command arguments as a list (safe from shell injection)."""
+            args = [
                 prowler_bin,
                 "aws",
-                f"--filter-region {regions_str}",
-                "-M json-ocsf",
-                f"-o {output_dir}",
+                "--filter-region", regions_str,
+                "-M", "json-ocsf",
+                "-o", output_dir,
                 "--no-banner",
+                "--no-color",
+                "--ignore-exit-code-3",
             ]
 
             if checks:
-                cmd_parts.append(f"--check {' '.join(checks)}")
+                args.extend(["--check", *checks])
             elif services:
-                cmd_parts.append(f"--service {' '.join(services)}")
+                args.extend(["--service", *services])
 
-            if use_role and role_arn:
-                cmd_parts.append(f"-R {role_arn}")
+            if use_role and is_role_arn:
+                args.extend(["-R", role_arn])
                 if external_id and len(external_id) >= 2:
-                    cmd_parts.append(f"-I {external_id}")
+                    args.extend(["-I", external_id])
 
-            cmd = " ".join(cmd_parts)
-            logger.info("Running Prowler scan: %s", cmd)
+            return args
 
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+        async def _exec_prowler(use_role: bool):
+            args = _build_args(use_role)
+            logger.info("Running Prowler scan: %s", " ".join(args))
+
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=3600)
             return proc.returncode, stderr_bytes.decode() if stderr_bytes else ""
 
-        # Try with role first if provided
+        # Try with role first if it is a valid IAM role ARN
         returncode = -1
         stderr_text = ""
-        if role_arn:
+        if is_role_arn:
             returncode, stderr_text = await _exec_prowler(use_role=True)
             if returncode not in (0, 3) and ("AssumeRole" in stderr_text or "AccessDenied" in stderr_text or "credentials" in stderr_text):
                 logger.warning("Prowler with role %s failed (%s). Retrying with direct AWS credentials.", role_arn, stderr_text)
@@ -147,7 +171,7 @@ class ProwlerRunner:
                 "PASS": "pass",
                 "FAIL": "fail",
                 "MANUAL": "manual",
-                "MUTED": "pass",
+                "MUTED": "muted",
             }
 
             finding_info = event.get("finding_info", {})
