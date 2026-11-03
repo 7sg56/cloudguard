@@ -7,24 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.finding import Finding
-from models.account import CloudAccount
+from routers.utils import resolve_account_id, finding_to_dict
 
 router = APIRouter(prefix="/findings", tags=["findings"])
 
 
-async def _resolve_account_id(account_id: str, db: AsyncSession) -> str:
-    """Resolve an account ID string (which may be a UUID or a 12-digit AWS account ID) to the 12-digit AWS account ID."""
-    try:
-        val = uuid.UUID(account_id)
-        result = await db.execute(select(CloudAccount.account_id).where(CloudAccount.id == val))
-        aws_id = result.scalar_one_or_none()
-        if aws_id:
-            return aws_id
-    except ValueError:
-        pass
-    return account_id
-
-
+@router.get("")
 @router.get("/")
 async def list_findings(
     account_id: str = Query(...),
@@ -37,7 +25,7 @@ async def list_findings(
     db: AsyncSession = Depends(get_db),
 ):
     """List findings with pagination and filters."""
-    resolved_id = await _resolve_account_id(account_id, db)
+    resolved_id = await resolve_account_id(account_id, db)
     query = select(Finding).where(Finding.account_id == resolved_id)
 
     if severity and severity != "all":
@@ -62,26 +50,7 @@ async def list_findings(
     findings = result.scalars().all()
 
     return {
-        "items": [
-            {
-                "id": str(f.id),
-                "account_id": f.account_id,
-                "check_id": f.check_id,
-                "resource_id": f.resource_id,
-                "resource_type": f.resource_type,
-                "service": f.service,
-                "region": f.region,
-                "title": f.title,
-                "status": f.status,
-                "severity": f.severity,
-                "compliance_type": f.compliance_type,
-                "description": f.description,
-                "recommendation": f.recommendation,
-                "updated_at": f.updated_at.isoformat() if f.updated_at else None,
-                "raw_data": f.raw_data or {},
-            }
-            for f in findings
-        ],
+        "items": [finding_to_dict(f) for f in findings],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -92,33 +61,27 @@ async def list_findings(
 @router.get("/{finding_id}")
 async def get_finding(finding_id: str, db: AsyncSession = Depends(get_db)):
     """Get a single finding by ID."""
-    result = await db.execute(select(Finding).where(Finding.id == uuid.UUID(finding_id)))
+    try:
+        fid = uuid.UUID(finding_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid finding ID format")
+
+    result = await db.execute(select(Finding).where(Finding.id == fid))
     f = result.scalar_one_or_none()
     if not f:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return {
-        "id": str(f.id),
-        "account_id": f.account_id,
-        "check_id": f.check_id,
-        "resource_id": f.resource_id,
-        "resource_type": f.resource_type,
-        "service": f.service,
-        "region": f.region,
-        "title": f.title,
-        "status": f.status,
-        "severity": f.severity,
-        "compliance_type": f.compliance_type,
-        "description": f.description,
-        "recommendation": f.recommendation,
-        "updated_at": f.updated_at.isoformat() if f.updated_at else None,
-        "raw_data": f.raw_data or {},
-    }
+    return finding_to_dict(f)
 
 
 @router.post("/{finding_id}/rescan")
 async def rescan_finding(finding_id: str, db: AsyncSession = Depends(get_db)):
     """Mark a finding for rescanning."""
-    result = await db.execute(select(Finding).where(Finding.id == uuid.UUID(finding_id)))
+    try:
+        fid = uuid.UUID(finding_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid finding ID format")
+
+    result = await db.execute(select(Finding).where(Finding.id == fid))
     f = result.scalar_one_or_none()
     if not f:
         raise HTTPException(status_code=404, detail="Finding not found")

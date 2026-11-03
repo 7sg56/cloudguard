@@ -3,7 +3,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=20, max_overflow=10)
+engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_size=20, max_overflow=10, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 async_session_factory = async_session
 
@@ -16,10 +16,7 @@ class Base(DeclarativeBase):
 async def get_db():
     """FastAPI dependency yielding an async database session."""
     async with async_session() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
 
 
 async def init_db():

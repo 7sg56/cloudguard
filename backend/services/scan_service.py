@@ -14,6 +14,7 @@ from models.account import CloudAccount
 from models.finding import Finding
 from models.resource import CloudResource
 from models.scan import Scan
+from routers.utils import upsert_findings
 from services.aws_session import AWSSessionManager
 from services.prowler_runner import ProwlerRunner
 from services.resource_discovery import ResourceDiscoveryService
@@ -121,41 +122,7 @@ async def run_security_scan(
                     regions=regions,
                 )
 
-                for f_data in prowler_findings:
-                    stmt = insert(Finding).values(
-                        account_id=account_id,
-                        scan_id=uuid.UUID(scan_id),
-                        check_id=f_data.get("check_id", ""),
-                        resource_id=f_data.get("resource_id", ""),
-                        resource_type=f_data.get("resource_type", ""),
-                        service=f_data.get("service", ""),
-                        region=f_data.get("region", ""),
-                        title=f_data.get("title", ""),
-                        status=f_data.get("status", "fail"),
-                        severity=f_data.get("severity", "info"),
-                        compliance_type=f_data.get("compliance_type"),
-                        description=f_data.get("description", ""),
-                        recommendation=f_data.get("recommendation", ""),
-                        raw_data=f_data.get("raw_data", {}),
-                        updated_at=datetime.now(timezone.utc),
-                    )
-                    stmt = stmt.on_conflict_do_update(
-                        constraint="uq_account_check_resource",
-                        set_={
-                            "scan_id": stmt.excluded.scan_id,
-                            "title": stmt.excluded.title,
-                            "status": stmt.excluded.status,
-                            "severity": stmt.excluded.severity,
-                            "compliance_type": stmt.excluded.compliance_type,
-                            "description": stmt.excluded.description,
-                            "recommendation": stmt.excluded.recommendation,
-                            "raw_data": stmt.excluded.raw_data,
-                            "updated_at": stmt.excluded.updated_at,
-                        },
-                    )
-                    await db.execute(stmt)
-                    findings_count += 1
-
+                findings_count = await upsert_findings(db, prowler_findings, account_id, scan_id)
                 await db.commit()
                 logger.info("Scan %s: Prowler finished with %d findings", scan_id, findings_count)
 

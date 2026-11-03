@@ -1,15 +1,23 @@
+import re
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select, delete
+from pydantic import BaseModel, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.account import CloudAccount
+from services.aws_session import AWSSessionManager
+from routers.utils import resolve_account
+
+import redis.asyncio as aioredis
+from config import settings
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+_AWS_ACCOUNT_ID_RE = re.compile(r"^\d{12}$")
 
 
 class AccountCreate(BaseModel):
@@ -18,6 +26,13 @@ class AccountCreate(BaseModel):
     role_arn: str
     environment: str = "production"
     regions: str = "us-east-1"
+
+    @field_validator("account_id")
+    @classmethod
+    def validate_account_id(cls, v: str) -> str:
+        if not _AWS_ACCOUNT_ID_RE.match(v):
+            raise ValueError("account_id must be a 12-digit AWS Account ID")
+        return v
 
 
 class AccountUpdate(BaseModel):
@@ -44,29 +59,31 @@ class AccountResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _account_to_response(a: CloudAccount) -> AccountResponse:
+    """Convert a CloudAccount ORM object to an AccountResponse."""
+    return AccountResponse(
+        id=str(a.id),
+        account_id=a.account_id,
+        name=a.name,
+        provider="aws",
+        role_arn=a.role_arn,
+        external_id=a.external_id,
+        environment=a.environment,
+        regions=a.regions or [],
+        status=a.status,
+        created_at=a.created_at.isoformat() if a.created_at else "",
+        updated_at=a.updated_at.isoformat() if a.updated_at else "",
+        last_scan_at=a.last_scan_at.isoformat() if a.last_scan_at else None,
+    )
+
+
 @router.get("", response_model=list[AccountResponse])
 @router.get("/", response_model=list[AccountResponse])
 async def list_accounts(db: AsyncSession = Depends(get_db)) -> list[AccountResponse]:
     """List all connected AWS accounts."""
     result = await db.execute(select(CloudAccount).order_by(CloudAccount.created_at))
     accounts = result.scalars().all()
-    return [
-        AccountResponse(
-            id=str(a.id),
-            account_id=a.account_id,
-            name=a.name,
-            provider="aws",
-            role_arn=a.role_arn,
-            external_id=a.external_id,
-            environment=a.environment,
-            regions=a.regions or [],
-            status=a.status,
-            created_at=a.created_at.isoformat() if a.created_at else "",
-            updated_at=a.updated_at.isoformat() if a.updated_at else "",
-            last_scan_at=a.last_scan_at.isoformat() if a.last_scan_at else None,
-        )
-        for a in accounts
-    ]
+    return [_account_to_response(a) for a in accounts]
 
 
 @router.post("", status_code=201, response_model=AccountResponse)
@@ -89,20 +106,7 @@ async def create_account(data: AccountCreate, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(account)
 
-    return AccountResponse(
-        id=str(account.id),
-        account_id=account.account_id,
-        name=account.name,
-        provider="aws",
-        role_arn=account.role_arn,
-        external_id=account.external_id,
-        environment=account.environment,
-        regions=account.regions or [],
-        status=account.status,
-        created_at=account.created_at.isoformat(),
-        updated_at=account.updated_at.isoformat(),
-        last_scan_at=None,
-    )
+    return _account_to_response(account)
 
 
 @router.put("/{account_id}", response_model=AccountResponse)
@@ -112,18 +116,7 @@ async def update_account(
     db: AsyncSession = Depends(get_db),
 ) -> AccountResponse:
     """Update an existing AWS account's configuration."""
-    # Find account by UUID or 12-digit account_id
-    account = None
-    try:
-        val = uuid.UUID(account_id)
-        result = await db.execute(select(CloudAccount).where(CloudAccount.id == val))
-        account = result.scalar_one_or_none()
-    except ValueError:
-        pass
-
-    if not account:
-        result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
-        account = result.scalar_one_or_none()
+    account = await resolve_account(account_id, db)
 
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -140,36 +133,13 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
 
-    return AccountResponse(
-        id=str(account.id),
-        account_id=account.account_id,
-        name=account.name,
-        provider="aws",
-        role_arn=account.role_arn,
-        external_id=account.external_id,
-        environment=account.environment,
-        regions=account.regions or [],
-        status=account.status,
-        created_at=account.created_at.isoformat(),
-        updated_at=account.updated_at.isoformat(),
-        last_scan_at=account.last_scan_at.isoformat() if account.last_scan_at else None,
-    )
+    return _account_to_response(account)
 
 
 @router.delete("/{account_id}")
 async def delete_account(account_id: str, db: AsyncSession = Depends(get_db)):
     """Delete an AWS account and all related data."""
-    account = None
-    try:
-        val = uuid.UUID(account_id)
-        result = await db.execute(select(CloudAccount).where(CloudAccount.id == val))
-        account = result.scalar_one_or_none()
-    except ValueError:
-        pass
-
-    if not account:
-        result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
-        account = result.scalar_one_or_none()
+    account = await resolve_account(account_id, db)
 
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -182,21 +152,20 @@ async def delete_account(account_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{account_id}/validate")
 async def validate_account(account_id: str, db: AsyncSession = Depends(get_db)):
     """Validate that the IAM role can be assumed or direct credentials work."""
-    result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
-    account = result.scalar_one_or_none()
+    account = await resolve_account(account_id, db)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-
-    import redis.asyncio as aioredis
-    from config import settings
-    from services.aws_session import AWSSessionManager
 
     redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         session_mgr = AWSSessionManager(redis_client)
         is_valid = await session_mgr.validate_role(account.role_arn, account.external_id or "")
+
         account.status = "connected" if is_valid else "error"
         await db.commit()
+
         return {"valid": is_valid}
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
     finally:
         await redis_client.aclose()
