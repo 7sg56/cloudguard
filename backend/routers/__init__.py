@@ -1,1 +1,1 @@
-"""Backend routers package."""
+"""Router package for the CSPM API."""

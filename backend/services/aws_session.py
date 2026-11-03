@@ -23,7 +23,7 @@ class AWSSessionManager:
 
     async def get_session(self, role_arn: str | None, external_id: str | None, region: str) -> boto3.Session:
         """Get a boto3 Session with cached STS AssumeRole credentials, falling back to default session if role fails."""
-        if not role_arn:
+        if not role_arn or ":role/" not in role_arn:
             return boto3.Session(region_name=region)
 
         cache_key = self._cache_key(role_arn, region)

@@ -2,6 +2,7 @@ import logging
 
 from groq import AsyncGroq
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -20,6 +21,9 @@ SYSTEM_PROMPT = """You are an expert AWS cloud security engineer. When given a s
 Use markdown formatting. Be specific with resource ARNs, regions, and parameters.
 Keep your response focused and actionable. Do not use emojis."""
 
+# Fallback model chain for resilience
+_FALLBACK_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound-mini"]
+
 
 class RemediationService:
     """Provides AI-powered remediation guidance using Groq."""
@@ -27,6 +31,31 @@ class RemediationService:
     def __init__(self) -> None:
         self._client = AsyncGroq(api_key=settings.GROQ_API_KEY)
         self._model = settings.GROQ_MODEL
+
+    async def _call_with_fallback(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+    ) -> tuple[str, str, int | None]:
+        """Try the primary model then fallbacks. Returns (content, model_used, tokens_used)."""
+        models_to_try = [self._model] + [m for m in _FALLBACK_MODELS if m != self._model]
+
+        for model in models_to_try:
+            try:
+                response = await self._client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                content = response.choices[0].message.content or ""
+                tokens = response.usage.total_tokens if response.usage else None
+                return content, model, tokens
+            except Exception as e:
+                logger.warning("Groq model %s failed: %s, trying next model", model, e)
+
+        raise RuntimeError("All Groq models failed")
 
     async def get_remediation(
         self,
@@ -68,8 +97,7 @@ class RemediationService:
             f"Provide detailed remediation steps."
         )
 
-        response = await self._client.chat.completions.create(
-            model=self._model,
+        steps, used_model, tokens_used = await self._call_with_fallback(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
@@ -78,22 +106,23 @@ class RemediationService:
             max_tokens=3000,
         )
 
-        steps = response.choices[0].message.content or ""
-        tokens_used = response.usage.total_tokens if response.usage else None
+        # Store in cache (handle race condition on concurrent requests)
+        try:
+            cache_entry = RemediationCache(
+                check_id=check_id,
+                severity=severity,
+                service=service,
+                ai_response=steps,
+                model=used_model,
+                tokens_used=tokens_used,
+            )
+            db.add(cache_entry)
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            logger.debug("Cache entry already exists for %s/%s/%s, skipping", check_id, severity, service)
 
-        # Store in cache
-        cache_entry = RemediationCache(
-            check_id=check_id,
-            severity=severity,
-            service=service,
-            ai_response=steps,
-            model=self._model,
-            tokens_used=tokens_used,
-        )
-        db.add(cache_entry)
-        await db.commit()
-
-        return {"steps": steps, "model": self._model, "tokens_used": tokens_used}
+        return {"steps": steps, "model": used_model, "tokens_used": tokens_used}
 
     async def chat_followup(
         self,
@@ -110,12 +139,10 @@ class RemediationService:
         for msg in messages:
             groq_messages.append({"role": msg["role"], "content": msg["content"]})
 
-        response = await self._client.chat.completions.create(
-            model=self._model,
+        reply, used_model, _ = await self._call_with_fallback(
             messages=groq_messages,
             temperature=0.3,
             max_tokens=2000,
         )
 
-        reply = response.choices[0].message.content or ""
-        return {"reply": reply, "model": self._model}
+        return {"reply": reply, "model": used_model}

@@ -157,7 +157,7 @@ docker compose -f docker/docker-compose.yml ps
 ### High-Level Architecture Diagram
 
 ```mermaid
-graph TB
+flowchart TD
     subgraph Client["Client Browser"]
         UI["Next.js 15 App (React 19, Shadcn/UI, Tailwind)"]
     end
@@ -175,17 +175,17 @@ graph TB
     end
 
     subgraph DataTier["Data & Cache Tier"]
-        PG[(PostgreSQL 16\nFindings, Assets, Accounts, Scans, Remediation Cache)]
-        RedisCache[(Redis 7\nSTS Credential Cache & Task Queues)]
+        PG[("PostgreSQL 16<br/>Findings, Assets, Accounts, Scans, Remediation Cache")]
+        RedisCache[("Redis 7<br/>STS Credential Cache & Task Queues")]
     end
 
     subgraph ExternalAWS["External Target AWS Account"]
         STS["AWS Security Token Service (STS)"]
-        AWSResources["AWS Resources\n(EC2, S3, IAM, VPC, RDS, Lambda)"]
+        AWSResources["AWS Resources<br/>(EC2, S3, IAM, VPC, RDS, Lambda)"]
     end
 
     subgraph AIPlatform["AI Cloud"]
-        GroqAPI["Groq Cloud API\n(LLaMA-3.3-70B-Versatile)"]
+        GroqAPI["Groq Cloud API<br/>(LLaMA-3.3-70B-Versatile)"]
     end
 
     UI -->|HTTPS / Next.js| Proxy
@@ -510,7 +510,7 @@ Deploying CloudGuard in a production enterprise environment requires high availa
 ### Production AWS Architecture Diagram
 
 ```mermaid
-graph TB
+flowchart TD
     subgraph Users["End Users"]
         Browser["Security Engineers / SREs"]
     end
@@ -523,30 +523,30 @@ graph TB
     end
 
     subgraph ComputeTier["Container Compute (AWS ECS Fargate / EKS)"]
-        FrontendTasks["Next.js Frontend Tasks\n(2+ Replicas, Auto-scaling)"]
-        APITasks["FastAPI Core API Tasks\n(2+ Replicas, Auto-scaling)"]
-        WorkerPool["Prowler & Discovery Worker Fleet\n(Scales based on SQS Depth)"]
+        FrontendTasks["Next.js Frontend Tasks<br/>(2+ Replicas, Auto-scaling)"]
+        APITasks["FastAPI Core API Tasks<br/>(2+ Replicas, Auto-scaling)"]
+        WorkerPool["Prowler & Discovery Worker Fleet<br/>(Scales based on SQS Depth)"]
     end
 
     subgraph EventMesh["Event-Driven Trigger Mesh"]
         EB["Amazon EventBridge"]
         SQSQueue["Amazon SQS (Scan Job Queue)"]
         DLQ["Amazon SQS (Dead-Letter Queue)"]
-        Scheduler["EventBridge Scheduled Rules\n(Nightly / Weekly Scans)"]
+        Scheduler["EventBridge Scheduled Rules<br/>(Nightly / Weekly Scans)"]
     end
 
     subgraph StorageTier["Data & Security Tier"]
-        Aurora[(Amazon Aurora Serverless v2 PostgreSQL\nMulti-AZ, Read Replicas)]
-        ElastiCache[(Amazon ElastiCache Redis Cluster\nMulti-AZ)]
-        S3Logs[("Amazon S3\nProwler Raw Output & Evidence Artifacts")]
-        SecretsMgr["AWS Secrets Manager\n(Database passwords, Groq API keys)"]
-        KMS["AWS KMS\n(Customer Managed Encryption Keys)"]
+        Aurora[("Amazon Aurora Serverless v2 PostgreSQL<br/>Multi-AZ, Read Replicas")]
+        ElastiCache[("Amazon ElastiCache Redis Cluster<br/>Multi-AZ")]
+        S3Logs[("Amazon S3<br/>Prowler Raw Output & Evidence Artifacts")]
+        SecretsMgr["AWS Secrets Manager<br/>(Database passwords, Groq API keys)"]
+        KMS["AWS KMS<br/>(Customer Managed Encryption Keys)"]
     end
 
     subgraph TargetAccounts["Target AWS Cloud Accounts"]
         Target1["AWS Production Account (IAM Role: CloudGuardScanRole)"]
         Target2["AWS Staging Account (IAM Role: CloudGuardScanRole)"]
-        OrgMgmt["AWS Organizations Management Account\n(StackSet Auto-Onboarding)"]
+        OrgMgmt["AWS Organizations Management Account<br/>(StackSet Auto-Onboarding)"]
     end
 
     Browser --> R53
@@ -631,13 +631,13 @@ Instead of waiting for nightly scans, configure Amazon EventBridge rules listeni
 ### CI/CD Deployment Pipeline
 
 ```mermaid
-graph LR
-    Push["Git Push to main"] --> Lint["Lint & TypeCheck (npm run build, ruff)"]
-    Lint --> Test["Backend Unit & Integration Tests (pytest)"]
-    Test --> Build["Build Docker Images (Frontend, API, Worker)"]
+flowchart LR
+    Push["Git Push to main"] --> Lint["Lint & TypeCheck<br/>(npm run build, ruff)"]
+    Lint --> Test["Backend Unit &<br/>Integration Tests (pytest)"]
+    Test --> Build["Build Docker Images<br/>(Frontend, API, Worker)"]
     Build --> ECR["Push to Amazon ECR"]
-    ECR --> Scan["Container Vulnerability Scan (Amazon Inspector)"]
-    Scan --> Deploy["Deploy to ECS Fargate (Rolling Update)"]
+    ECR --> Scan["Container Vulnerability Scan<br/>(Amazon Inspector)"]
+    Scan --> Deploy["Deploy to ECS Fargate<br/>(Rolling Update)"]
 ```
 
 ---
