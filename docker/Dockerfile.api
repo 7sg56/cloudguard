@@ -22,6 +22,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 RUN uv venv $VIRTUAL_ENV
 RUN uv pip install --python $VIRTUAL_ENV -r requirements.txt
+RUN uv pip install --python $VIRTUAL_ENV prowler arq
 
 # Copy backend source code
 COPY backend/ .

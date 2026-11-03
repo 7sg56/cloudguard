@@ -181,9 +181,22 @@ async def delete_account(account_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{account_id}/validate")
 async def validate_account(account_id: str, db: AsyncSession = Depends(get_db)):
-    """Validate that the IAM role can be assumed."""
+    """Validate that the IAM role can be assumed or direct credentials work."""
     result = await db.execute(select(CloudAccount).where(CloudAccount.account_id == account_id))
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    return {"valid": True}
+
+    import redis.asyncio as aioredis
+    from config import settings
+    from services.aws_session import AWSSessionManager
+
+    redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        session_mgr = AWSSessionManager(redis_client)
+        is_valid = await session_mgr.validate_role(account.role_arn, account.external_id or "")
+        account.status = "connected" if is_valid else "error"
+        await db.commit()
+        return {"valid": is_valid}
+    finally:
+        await redis_client.aclose()

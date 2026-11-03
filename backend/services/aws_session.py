@@ -23,7 +23,8 @@ class AWSSessionManager:
 
     async def get_session(self, role_arn: str | None, external_id: str | None, region: str) -> boto3.Session:
         """Get a boto3 Session with cached STS AssumeRole credentials, falling back to default session if role fails."""
-        if not role_arn:
+        if not role_arn or ":role/" not in role_arn:
+            logger.info("Using direct credentials session for region %s (role_arn: %s)", region, role_arn)
             return boto3.Session(region_name=region)
 
         cache_key = self._cache_key(role_arn, region)
@@ -80,11 +81,16 @@ class AWSSessionManager:
             return boto3.Session(region_name=region)
 
     async def validate_role(self, role_arn: str, external_id: str) -> bool:
-        """Test if STS AssumeRole succeeds for the given role."""
-        if not role_arn:
-            return True
+        """Test if STS AssumeRole succeeds for the given role, or check caller identity for direct credentials."""
+        sts_client = boto3.client("sts")
+        if not role_arn or ":role/" not in role_arn:
+            try:
+                sts_client.get_caller_identity()
+                return True
+            except Exception as e:
+                logger.warning("Direct credentials validation failed: %s", e)
+                return False
         try:
-            sts_client = boto3.client("sts")
             kwargs = {
                 "RoleArn": role_arn,
                 "RoleSessionName": "cspm-validate",

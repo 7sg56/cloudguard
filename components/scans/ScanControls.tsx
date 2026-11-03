@@ -137,7 +137,17 @@ export function ScanControls({
                   {history.map((scan) => (
                     <tr key={scan.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <StatusBadge status={scan.status} />
+                        <div className="flex flex-col gap-0.5">
+                          <StatusBadge status={scan.status} />
+                          {scan.error_message && (
+                            <span
+                              className="text-[10px] text-red-600 max-w-[220px] truncate"
+                              title={scan.error_message}
+                            >
+                              {scan.error_message}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap capitalize text-slate-700">
                         {scan.scan_type === "full" ? "Compliance" : "Inventory"}
@@ -149,7 +159,7 @@ export function ScanControls({
                         {scan.finished_at ? formatDuration(scan.started_at, scan.finished_at) : "Running"}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-800">
-                        {scan.resources_scanned || "--"}
+                        {scan.resources_scanned ?? "--"}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-semibold text-slate-800">
                         {scan.findings_count}

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +25,9 @@ class ProwlerRunner:
         services: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Run a Prowler scan and return parsed findings."""
-        output_dir = output_dir or settings.PROWLER_OUTPUT_DIR
-        os.makedirs(output_dir, exist_ok=True)
+        base_dir = output_dir or settings.PROWLER_OUTPUT_DIR
+        scan_dir = os.path.join(base_dir, f"scan_{uuid.uuid4().hex[:8]}")
+        os.makedirs(scan_dir, exist_ok=True)
 
         prowler_bin = shutil.which("prowler") or "/opt/homebrew/bin/prowler"
         if not os.path.exists(prowler_bin) and not shutil.which(prowler_bin):
@@ -40,7 +42,7 @@ class ProwlerRunner:
                 "aws",
                 f"--filter-region {regions_str}",
                 "-M json-ocsf",
-                f"-o {output_dir}",
+                f"-o {scan_dir}",
                 "--no-banner",
             ]
 
@@ -65,22 +67,36 @@ class ProwlerRunner:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=3600)
             return proc.returncode, stderr_bytes.decode() if stderr_bytes else ""
 
-        # Try with role first if provided
+        is_role = bool(role_arn and ":role/" in role_arn)
         returncode = -1
         stderr_text = ""
-        if role_arn:
+
+        if is_role:
             returncode, stderr_text = await _exec_prowler(use_role=True)
-            if returncode not in (0, 3) and ("AssumeRole" in stderr_text or "AccessDenied" in stderr_text or "credentials" in stderr_text):
-                logger.warning("Prowler with role %s failed (%s). Retrying with direct AWS credentials.", role_arn, stderr_text)
+            if returncode not in (0, 3) and (
+                "AssumeRole" in stderr_text
+                or "AccessDenied" in stderr_text
+                or "credentials" in stderr_text
+                or "ValidationError" in stderr_text
+            ):
+                logger.warning(
+                    "Prowler with role %s failed (%s). Retrying with direct AWS credentials.",
+                    role_arn,
+                    stderr_text,
+                )
                 returncode, stderr_text = await _exec_prowler(use_role=False)
         else:
+            logger.info("Account role_arn is not an IAM role (%s). Running Prowler with direct credentials.", role_arn)
             returncode, stderr_text = await _exec_prowler(use_role=False)
 
-        if returncode not in (0, 3):
-            logger.warning("Prowler scan completed with code %d: %s", returncode, stderr_text)
-
         # Parse JSON-OCSF output files
-        findings = ProwlerRunner._parse_output(output_dir)
+        findings = ProwlerRunner._parse_output(scan_dir)
+
+        if returncode not in (0, 3) and not findings:
+            clean_err = stderr_text.strip() or f"Prowler exited with status code {returncode}"
+            logger.error("Prowler scan failed with exit code %d: %s", returncode, clean_err)
+            raise RuntimeError(f"Prowler scan failed: {clean_err}")
+
         logger.info("Prowler scan completed: %d findings parsed", len(findings))
         return findings
 
@@ -89,7 +105,7 @@ class ProwlerRunner:
         """Parse Prowler JSON-OCSF output files into normalized findings."""
         findings: list[dict[str, Any]] = []
 
-        for json_file in Path(output_dir).glob("*.ocsf.json"):
+        for json_file in Path(output_dir).rglob("*.ocsf.json"):
             try:
                 with open(json_file) as f:
                     content = f.read().strip()
